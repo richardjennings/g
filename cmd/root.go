@@ -8,16 +8,19 @@ import (
 
 var (
 	gitDirectoryFlag string
+	pathFlag         string
 	rootCmd          = &cobra.Command{}
 )
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&gitDirectoryFlag, "git-directory", mygit.DefaultGitDirectory, "--git-directory")
+	rootCmd.PersistentFlags().StringVar(&pathFlag, "path", mygit.DefaultPath, "--path")
 }
 
-func myGit() *mygit.MyGit {
+func myGit() (*mygit.MyGit, error) {
 	opts := []mygit.Opt{
 		mygit.WithGitDirectory(gitDirectoryFlag),
+		mygit.WithPath(pathFlag),
 	}
 	return mygit.NewMyGit(opts...)
 }
