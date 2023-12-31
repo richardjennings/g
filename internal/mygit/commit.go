@@ -6,6 +6,7 @@ import (
 )
 
 func (m *MyGit) Commit() error {
+	currentBranch := "main"
 	files, err := m.files()
 	if err != nil {
 		return err
@@ -22,10 +23,26 @@ func (m *MyGit) Commit() error {
 	if err != nil {
 		return err
 	}
-	commitSha, err := m.storeCommit(sha, [][]byte{}, "Richard Jennings <richardjennings@gmail.com>", "Richard Jennings <richardjennings@gmail.com>", "test")
+	// @todo check for a previous commit better
+	var previousCommits [][]byte
+	previousCommit, err := m.headSHA(currentBranch)
+	if err != nil {
+		return err
+	}
+	if previousCommit != nil {
+		previousCommits = append(previousCommits, previousCommit)
+	}
+
+	commitSha, err := m.storeCommit(
+		sha,
+		previousCommits,
+		"Richard Jennings <richardjennings@gmail.com>",
+		"Richard Jennings <richardjennings@gmail.com>",
+		"test",
+	)
 	if err != nil {
 		return err
 	}
 	log.Println(hex.EncodeToString(commitSha))
-	return m.updateHead("main", commitSha)
+	return m.updateHead(currentBranch, commitSha)
 }
