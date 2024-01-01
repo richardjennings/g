@@ -7,22 +7,23 @@ import (
 
 func (m *MyGit) Commit() error {
 	currentBranch := "main"
+	author := "Richard Jennings <richardjennings@gmail.com>"
+	committer := "Richard Jennings <richardjennings@gmail.com>"
+	message := "test"
+
+	// get files
 	files, err := m.files()
 	if err != nil {
 		return err
 	}
-	var fos []*fileObject
-	for _, v := range files {
-		fo, err := m.storeBlob(v)
-		if err != nil {
-			return err
-		}
-		fos = append(fos, fo)
-	}
-	sha, err := m.storeTree(fos)
+
+	// create trees of subtrees and blobs
+	root := m.objectTree(files)
+	sha, err := m.writeObjectTree(root)
 	if err != nil {
 		return err
 	}
+
 	// @todo check for a previous commit better
 	var previousCommits [][]byte
 	previousCommit, err := m.headSHA(currentBranch)
@@ -36,9 +37,9 @@ func (m *MyGit) Commit() error {
 	commitSha, err := m.storeCommit(
 		sha,
 		previousCommits,
-		"Richard Jennings <richardjennings@gmail.com>",
-		"Richard Jennings <richardjennings@gmail.com>",
-		"test",
+		author,
+		committer,
+		message,
 	)
 	if err != nil {
 		return err

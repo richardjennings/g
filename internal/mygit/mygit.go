@@ -3,6 +3,7 @@ package mygit
 import (
 	"io/fs"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -69,6 +70,10 @@ func (m *MyGit) files() ([]string, error) {
 	}); err != nil {
 		return files, err
 	}
+	// sort alphanumeric filename
+	sort.Slice(files, func(i, j int) bool {
+		return files[i] < files[j]
+	})
 	return files, nil
 }
 

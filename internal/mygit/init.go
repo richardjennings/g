@@ -20,7 +20,6 @@ func (m *MyGit) Init() error {
 			log.Fatalln(err)
 		}
 	}
-	// write an initially git HEAD
-	os.WriteFile(filepath.Join(path, DefaultHeadFile), []byte("ref: refs/heads/main\n"), 0644)
-	return nil
+	// set default main branch
+	return os.WriteFile(filepath.Join(path, DefaultHeadFile), []byte("ref: refs/heads/main\n"), 0644)
 }
