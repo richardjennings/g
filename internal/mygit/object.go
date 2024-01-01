@@ -31,9 +31,21 @@ type (
 )
 
 func (m *MyGit) writeObject(header []byte, content []byte, contentFile string) ([]byte, error) {
+	var f *os.File
+	var err error
 	h := sha1.New()
 	h.Write(header)
 	h.Write(content)
+	if contentFile != "" {
+		f, err = os.Open(contentFile)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = f.Close() }()
+		if _, err := io.Copy(h, f); err != nil {
+			return nil, err
+		}
+	}
 	sha := h.Sum(nil)
 	// create object path if needed
 	npath := filepath.Join(m.path, m.gitDirectory, ObjectsDirectory, hex.EncodeToString(sha)[0:2])
@@ -42,7 +54,7 @@ func (m *MyGit) writeObject(header []byte, content []byte, contentFile string) (
 	}
 
 	// if object exists with sha already we can avoid writing again
-	_, err := os.Stat(filepath.Join(npath, hex.EncodeToString(sha)[2:]))
+	_, err = os.Stat(filepath.Join(npath, hex.EncodeToString(sha)[2:]))
 	if err == nil || !errors.Is(err, fs.ErrNotExist) {
 		// file exists
 		return sha, err
@@ -61,12 +73,7 @@ func (m *MyGit) writeObject(header []byte, content []byte, contentFile string) (
 	if _, err := z.Write(content); err != nil {
 		return nil, err
 	}
-	if contentFile != "" {
-		f, err := os.Open(contentFile)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = f.Close() }()
+	if f != nil {
 		if _, err := io.Copy(z, f); err != nil {
 			return nil, err
 		}
