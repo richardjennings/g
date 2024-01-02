@@ -1,6 +1,7 @@
 package mygit
 
 import (
+	"crypto/sha1"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -50,10 +51,11 @@ type (
 )
 
 const (
-	indexStatusInvalid indexStatusTyp = iota
-	indexStatusModified
-	indexStatusAdded
-	indexStatusDeleted
+	indexStatusInvalid   indexStatusTyp = iota
+	indexStatusModified                 // different in working directory than index
+	indexStatusUntracked                // in working directory but not in index
+	indexStatusAdded                    // in index but not in last commit
+	indexStatusDeleted                  // in last commit but not in index
 	indexStatusUnchanged
 )
 
@@ -65,6 +67,14 @@ func (i *index) fileNames() []string {
 	return files
 }
 
+func (m *MyGit) newIndex() *index {
+	return &index{header: &indexHeader{
+		Sig:        [4]byte{'D', 'I', 'R', 'C'},
+		Version:    2,
+		NumEntries: 0,
+	}}
+}
+
 // writeIndex writes an index struct to the Git Index
 func (m *MyGit) writeIndex(index *index) error {
 	path := filepath.Join(m.path, m.gitDirectory, DefaultIndexFile)
@@ -73,27 +83,35 @@ func (m *MyGit) writeIndex(index *index) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
+	// use a multi-writer to allow both writing the the file whilst incrementally generating
+	// a sha hash of the content as it is written
+	h := sha1.New()
+	mw := io.MultiWriter(f, h)
+
 	// write header
-	if err := binary.Write(f, binary.BigEndian, index.header); err != nil {
+	if err := binary.Write(mw, binary.BigEndian, index.header); err != nil {
 		return err
 	}
 	// write each item fixed size entry
 	for _, item := range index.items {
-		if err := binary.Write(f, binary.BigEndian, item.indexItemP); err != nil {
+		if err := binary.Write(mw, binary.BigEndian, item.indexItemP); err != nil {
 			return err
 		}
 		// write name
-		if _, err := f.Write(item.Name); err != nil {
+		if _, err := mw.Write(item.Name); err != nil {
 			return err
 		}
 		// write padding
 		padding := make([]byte, 8-(62+len(item.Name))%8)
-		if _, err := f.Write(padding); err != nil {
+		if _, err := mw.Write(padding); err != nil {
 			return err
 		}
 	}
+	// use the generated hash
+	sha := h.Sum(nil)
+	copy(index.sig[:], sha)
 	// write sha hash of index
-	if err := binary.Write(f, binary.BigEndian, &index.sig); err != nil {
+	if err := binary.Write(f, binary.BigEndian, &sha); err != nil {
 		return err
 	}
 	return nil
@@ -105,6 +123,9 @@ func (m *MyGit) readIndex() (*index, error) {
 	path := filepath.Join(m.path, m.gitDirectory, DefaultIndexFile)
 	f, err := os.Open(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return m.newIndex(), nil
+		}
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
@@ -168,7 +189,7 @@ func (m *MyGit) indexStatus() ([]*wdFile, error) {
 	// these will have added to working directory status
 	for v, f := range wdFileIdx {
 		if _, ok := idxFileIdx[v]; !ok {
-			f.status = indexStatusAdded
+			f.status = indexStatusUntracked
 		}
 	}
 
@@ -236,7 +257,7 @@ func (m *MyGit) Status(o io.Writer) error {
 			s = "x"
 		case indexStatusDeleted:
 			s = "D"
-		case indexStatusAdded:
+		case indexStatusUntracked:
 			s = "??"
 		case indexStatusUnchanged:
 			continue
