@@ -57,6 +57,27 @@ func NewMyGit(opts ...Opt) (*MyGit, error) {
 	return m, nil
 }
 
+// list working directory files that are not ignored
+func (m *MyGit) wdFiles() ([]*wdFile, error) {
+	var wdFiles []*wdFile
+	if err := filepath.Walk(m.path, func(path string, info fs.FileInfo, err error) error {
+		if info.IsDir() {
+			return nil
+		}
+		// do not add ignored files
+		if !m.isIgnored(path) {
+			wdFiles = append(wdFiles, &wdFile{
+				path:  strings.TrimPrefix(path, m.path+string(filepath.Separator)),
+				finfo: info,
+			})
+		}
+		return nil
+	}); err != nil {
+		return wdFiles, err
+	}
+	return wdFiles, nil
+}
+
 func (m *MyGit) files() ([]string, error) {
 	var files []string
 	if err := filepath.Walk(m.path, func(path string, info fs.FileInfo, err error) error {
