@@ -3,24 +3,34 @@ package mygit
 import (
 	"encoding/hex"
 	"log"
+	"time"
+)
+
+type (
+	commit struct {
+		tree            string
+		previousCommits []string
+		author          string
+		committer       string
+		message         string
+		date            time.Time
+	}
 )
 
 func (m *MyGit) Commit() error {
-	currentBranch := "main"
 	author := "Richard Jennings <richardjennings@gmail.com>"
 	committer := "Richard Jennings <richardjennings@gmail.com>"
 	message := "test"
+
+	// @todo this is pointed to by .git/HEAD
+	currentBranch := "main"
 
 	// get index
 	index, err := m.readIndex()
 	if err != nil {
 		return err
 	}
-	files := index.fileNames()
-	//files, err := m.files()
-	//if err != nil {
-	//	return err
-	//}
+	files := index.idxFiles()
 
 	// create trees of subtrees and blobs
 	root := m.objectTree(files)
@@ -43,7 +53,9 @@ func (m *MyGit) Commit() error {
 		sha,
 		previousCommits,
 		author,
+		time.Now(),
 		committer,
+		time.Now(),
 		message,
 	)
 	if err != nil {

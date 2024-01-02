@@ -17,7 +17,9 @@ var lsFilesCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Println(files)
+		for _, v := range files {
+			fmt.Println(v)
+		}
 		return nil
 	},
 }

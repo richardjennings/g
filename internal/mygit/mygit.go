@@ -3,7 +3,6 @@ package mygit
 import (
 	"io/fs"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -76,27 +75,6 @@ func (m *MyGit) wdFiles() ([]*wdFile, error) {
 		return wdFiles, err
 	}
 	return wdFiles, nil
-}
-
-func (m *MyGit) files() ([]string, error) {
-	var files []string
-	if err := filepath.Walk(m.path, func(path string, info fs.FileInfo, err error) error {
-		if info.IsDir() {
-			return nil
-		}
-		// do not add ignored files
-		if !m.isIgnored(path) {
-			files = append(files, path)
-		}
-		return nil
-	}); err != nil {
-		return files, err
-	}
-	// sort alphanumeric filename
-	sort.Slice(files, func(i, j int) bool {
-		return files[i] < files[j]
-	})
-	return files, nil
 }
 
 func (m *MyGit) isIgnored(path string) bool {

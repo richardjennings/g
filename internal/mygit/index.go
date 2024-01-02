@@ -51,6 +51,11 @@ type (
 		status indexStatusTyp
 		sha    []byte
 	}
+	idxFile struct {
+		path   string
+		status indexStatusTyp
+		sha    []byte
+	}
 )
 
 const (
@@ -93,10 +98,11 @@ func (wdf *wdFile) toIndexItem() (*indexItem, error) {
 	return item, nil
 }
 
-func (idx *index) fileNames() []string {
-	var files []string
+func (idx *index) idxFiles() []*idxFile {
+	var files []*idxFile
 	for _, v := range idx.items {
-		files = append(files, string(v.Name))
+		idx := &idxFile{path: string(v.Name), sha: v.Sha[:]}
+		files = append(files, idx)
 	}
 	return files
 }
@@ -290,10 +296,28 @@ func (m *MyGit) wdStatus() ([]*wdFile, error) {
 		if v.finfo.ModTime().Equal(mt) && v.finfo.Size() == int64(i.Size) {
 			v.status = indexStatusUnchanged
 		}
-	}
+		// the remaining files without a status might be modified,
+		// recalculate the sha hash of the file to be sure ...
+		// @todo for now lets just assume they are modified
 
-	// the remaining files without a status might be modified,
-	// recalculate the sha hash of the file to be sure ...
+		h := sha1.New()
+		f, err := os.Open(filepath.Join(m.path, v.path))
+		if err != nil {
+			return nil, err
+		}
+		header := []byte(fmt.Sprintf("blob %d%s", v.finfo.Size(), string(byte(0))))
+		h.Write(header)
+		_, err = io.Copy(h, f)
+		_ = f.Close()
+		if err != nil {
+			return nil, err
+		}
+		if string(h.Sum(nil)) != string(idxFileIdx[v.path].Sha[:]) {
+			v.status = indexStatusModified
+		} else {
+			v.status = indexStatusUnchanged
+		}
+	}
 
 	return files, nil
 }
@@ -313,7 +337,11 @@ func (m *MyGit) LsFiles() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return index.fileNames(), nil
+	var files []string
+	for _, v := range index.idxFiles() {
+		files = append(files, v.path)
+	}
+	return files, nil
 }
 
 func (m *MyGit) Add(paths ...string) error {
@@ -367,6 +395,8 @@ func (m *MyGit) Status(o io.Writer) error {
 		switch v.status {
 		case indexStatusInvalid:
 			s = "x"
+		case indexStatusModified:
+			s = "M"
 		case indexStatusDeleted:
 			s = "D"
 		case indexStatusUntracked:

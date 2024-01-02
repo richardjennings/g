@@ -26,6 +26,7 @@ type (
 		typ     objectType
 		sha     []byte
 		objects []*object
+		mode    string
 	}
 	objectType int
 )
@@ -84,7 +85,7 @@ func (m *MyGit) writeObject(header []byte, content []byte, contentFile string) (
 	return sha, nil
 }
 
-func (m *MyGit) storeCommit(treeSha []byte, parents [][]byte, author string, committer string, msg string) ([]byte, error) {
+func (m *MyGit) storeCommit(treeSha []byte, parents [][]byte, author string, authoredTime time.Time, committer string, committedTime time.Time, msg string) ([]byte, error) {
 	var parentCommits string
 	for _, v := range parents {
 		parentCommits += fmt.Sprintf("parent %s\n", v)
@@ -94,9 +95,9 @@ func (m *MyGit) storeCommit(treeSha []byte, parents [][]byte, author string, com
 		hex.EncodeToString(treeSha),
 		parentCommits,
 		author,
-		time.Now().Unix(),
+		authoredTime.Unix(),
 		committer,
-		time.Now().Unix(),
+		committedTime.Unix(),
 		msg,
 	))
 	header := []byte(fmt.Sprintf("commit %d%s", len(content), string(byte(0))))
@@ -131,22 +132,22 @@ func (m *MyGit) storeBlob(path string) (*object, error) {
 }
 
 // objectTree takes a list of files and generates an object tree like structure
-func (m *MyGit) objectTree(files []string) *object {
+func (m *MyGit) objectTree(files []*idxFile) *object {
 	root := &object{}
 	var n *object  // current node
 	var pn *object // previous node
 	// mp holds a cache of file paths to objectTree nodes
 	mp := make(map[string]*object)
 	for _, v := range files {
-		parts := strings.Split(strings.TrimPrefix(v, m.path+string(filepath.Separator)), string(filepath.Separator))
+		parts := strings.Split(strings.TrimPrefix(v.path, m.path+string(filepath.Separator)), string(filepath.Separator))
 		if len(parts) == 1 {
-			root.objects = append(root.objects, &object{typ: objectBlob, path: v})
+			root.objects = append(root.objects, &object{typ: objectBlob, path: v.path, sha: v.sha})
 			continue // top level file
 		}
 		pn = root
 		for i, p := range parts {
 			if i == len(parts)-1 {
-				pn.objects = append(pn.objects, &object{typ: objectBlob, path: v})
+				pn.objects = append(pn.objects, &object{typ: objectBlob, path: v.path, sha: v.sha})
 				continue // leaf
 			}
 			// key for cached nodes
@@ -169,15 +170,7 @@ func (m *MyGit) objectTree(files []string) *object {
 func (m *MyGit) writeObjectTree(node *object) ([]byte, error) {
 	// resolve child tree objects
 	for i, v := range node.objects {
-		// @todo the object blobs should already be in the object store having
-		// been added to the index previously ...
-		if v.typ == objectBlob {
-			fo, err := m.storeBlob(filepath.Join(m.path, v.path))
-			if err != nil {
-				return nil, err
-			}
-			node.objects[i].sha = fo.sha
-		} else if v.typ == objectTree {
+		if v.typ == objectTree {
 			// if the tree only has blobs, write them and then
 			// add the corresponding tree returning the sha
 			sha, err := m.writeObjectTree(v)
