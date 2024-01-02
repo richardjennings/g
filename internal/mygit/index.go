@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"syscall"
 	"time"
 )
 
@@ -27,7 +29,7 @@ type (
 		Name []byte
 	}
 	indexItemP struct {
-		CtimeS uint32
+		CTimeS uint32
 		CTimeN uint32
 		MTimeS uint32
 		MTimeN uint32
@@ -47,6 +49,7 @@ type (
 		path   string
 		finfo  os.FileInfo
 		status indexStatusTyp
+		sha    []byte
 	}
 )
 
@@ -59,12 +62,77 @@ const (
 	indexStatusUnchanged
 )
 
-func (i *index) fileNames() []string {
+func (wdf *wdFile) toIndexItem() (*indexItem, error) {
+	if wdf.sha == nil {
+		return nil, errors.New("missing sha from working directory file toIndexItem")
+	}
+	item := &indexItem{indexItemP: &indexItemP{}}
+	item.CTimeS = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Ctimespec.Sec)
+	item.CTimeN = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Ctimespec.Nsec)
+	item.MTimeS = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Mtimespec.Sec)
+	item.MTimeN = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Mtimespec.Nsec)
+	item.Dev = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Dev)
+	item.Ino = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Ino)
+	if wdf.finfo.IsDir() {
+		item.Mode = uint32(040000)
+	} else {
+		item.Mode = uint32(0100644)
+	}
+	item.Uid = wdf.finfo.Sys().(*syscall.Stat_t).Uid
+	item.Gid = wdf.finfo.Sys().(*syscall.Stat_t).Gid
+	item.Size = uint32(wdf.finfo.Size())
+	copy(item.Sha[:], wdf.sha)
+	nameLen := len(wdf.path)
+	if nameLen < 0xFFF {
+		item.Flags = uint16(len(wdf.path))
+	} else {
+		item.Flags = 0xFFF
+	}
+	item.Name = []byte(wdf.path)
+
+	return item, nil
+}
+
+func (idx *index) fileNames() []string {
 	var files []string
-	for _, v := range i.items {
+	for _, v := range idx.items {
 		files = append(files, string(v.Name))
 	}
 	return files
+}
+
+func (idx *index) addWdFile(f *wdFile) error {
+	// if delete, remove from index
+	if f.status == indexStatusDeleted {
+		for i, v := range idx.items {
+			if string(v.Name) == f.path {
+				idx.items = append(idx.items[0:i], idx.items[i+1:]...)
+				idx.header.NumEntries--
+				return nil
+			}
+		}
+		return errors.New("somehow the file was not found in index items to be removed")
+	} else if f.status == indexStatusUntracked {
+		// just add and sort all of them for now
+		item, err := f.toIndexItem()
+		if err != nil {
+			return err
+		}
+		idx.items = append(idx.items, item)
+		idx.header.NumEntries++
+		// and sort @todo more efficient
+		sort.Slice(idx.items, func(i, j int) bool {
+			if string(idx.items[i].Name) < string(idx.items[j].Name) {
+				return true
+			}
+			return false
+		})
+	} else if f.status == indexStatusModified {
+		// @todo add support for changing existing entries when working dir file is changed
+		return errors.New("updating modified file in index not written yet")
+	}
+
+	return nil
 }
 
 func (m *MyGit) newIndex() *index {
@@ -77,8 +145,11 @@ func (m *MyGit) newIndex() *index {
 
 // writeIndex writes an index struct to the Git Index
 func (m *MyGit) writeIndex(index *index) error {
+	if index.header.NumEntries != uint32(len(index.items)) {
+		return errors.New("index numEntries and length of items inconsistent")
+	}
 	path := filepath.Join(m.path, m.gitDirectory, DefaultIndexFile)
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
@@ -164,7 +235,7 @@ func (m *MyGit) readIndex() (*index, error) {
 
 // status returns a list of files in the working directory that are
 // modified, added or deleted.
-func (m *MyGit) indexStatus() ([]*wdFile, error) {
+func (m *MyGit) wdStatus() ([]*wdFile, error) {
 	index, err := m.readIndex()
 	if err != nil {
 		return nil, err
@@ -227,6 +298,7 @@ func (m *MyGit) indexStatus() ([]*wdFile, error) {
 	return files, nil
 }
 
+// ReadWriteIndex @todo remove - used to test writing and reading are correct (enough)
 func (m *MyGit) ReadWriteIndex() error {
 	index, err := m.readIndex()
 	if err != nil {
@@ -244,9 +316,49 @@ func (m *MyGit) LsFiles() ([]string, error) {
 	return index.fileNames(), nil
 }
 
+func (m *MyGit) Add(paths ...string) error {
+	index, err := m.readIndex()
+	if err != nil {
+		return err
+	}
+	// get working directory files with index status
+	wdFiles, err := m.wdStatus()
+	var updates []*wdFile
+	for _, p := range paths {
+		if p == "." {
+			// special case meaning add everything
+			for _, v := range wdFiles {
+				switch v.status {
+				case indexStatusUntracked, indexStatusModified, indexStatusDeleted:
+					updates = append(updates, v)
+				}
+			}
+		} else {
+			// @todo add support for paths other than just '.'
+			return errors.New("only supports '.' currently ")
+		}
+	}
+	for _, v := range updates {
+		switch v.status {
+		case indexStatusUntracked, indexStatusModified:
+			// add the file to the object store
+			obj, err := m.storeBlob(filepath.Join(m.path, v.path))
+			if err != nil {
+				return err
+			}
+			v.sha = obj.sha
+		}
+		if err := index.addWdFile(v); err != nil {
+			return err
+		}
+	}
+	// once all wdFiles are added to index struct, write it out
+	return m.writeIndex(index)
+}
+
 // Status currently displays the
 func (m *MyGit) Status(o io.Writer) error {
-	files, err := m.indexStatus()
+	files, err := m.wdStatus()
 	if err != nil {
 		return err
 	}
