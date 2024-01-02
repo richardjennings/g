@@ -11,11 +11,16 @@ func (m *MyGit) Commit() error {
 	committer := "Richard Jennings <richardjennings@gmail.com>"
 	message := "test"
 
-	// get files
-	files, err := m.files()
+	// get index
+	index, err := m.readIndex()
 	if err != nil {
 		return err
 	}
+	files := index.fileNames()
+	//files, err := m.files()
+	//if err != nil {
+	//	return err
+	//}
 
 	// create trees of subtrees and blobs
 	root := m.objectTree(files)

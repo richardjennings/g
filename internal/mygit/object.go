@@ -169,8 +169,10 @@ func (m *MyGit) objectTree(files []string) *object {
 func (m *MyGit) writeObjectTree(node *object) ([]byte, error) {
 	// resolve child tree objects
 	for i, v := range node.objects {
+		// @todo the object blobs should already be in the object store having
+		// been added to the index previously ...
 		if v.typ == objectBlob {
-			fo, err := m.storeBlob(v.path)
+			fo, err := m.storeBlob(filepath.Join(m.path, v.path))
 			if err != nil {
 				return nil, err
 			}
