@@ -11,6 +11,7 @@ const (
 	DefaultGitDirectory = ".git"
 	DefaultPath         = "."
 	DefaultHeadFile     = "HEAD"
+	DefaultIndexFile    = "index"
 	ObjectsDirectory    = "objects"
 	RefsDirectory       = "refs"
 	RefsHeadsDirectory  = "heads"
