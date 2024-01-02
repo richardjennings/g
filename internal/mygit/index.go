@@ -45,9 +45,43 @@ func (i *index) files() []string {
 	return files
 }
 
-// Index reads the Git Index into an index struct
+// writeIndex writes an index struct to the Git Index
+func (m *MyGit) writeIndex(index *index) error {
+	path := filepath.Join(m.path, m.gitDirectory, DefaultIndexFile)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	// write header
+	if err := binary.Write(f, binary.BigEndian, index.header); err != nil {
+		return err
+	}
+	// write each item fixed size entry
+	for _, item := range index.items {
+		if err := binary.Write(f, binary.BigEndian, item.indexItemP); err != nil {
+			return err
+		}
+		// write name
+		if _, err := f.Write(item.Name); err != nil {
+			return err
+		}
+		// write padding
+		padding := make([]byte, 8-(62+len(item.Name))%8)
+		if _, err := f.Write(padding); err != nil {
+			return err
+		}
+	}
+	// write sha hash of index
+	if err := binary.Write(f, binary.BigEndian, &index.sig); err != nil {
+		return err
+	}
+	return nil
+}
+
+// readIndex reads the Git Index into an index struct
 // @todo better implemented as a reader / writer
-func (m *MyGit) index() (*index, error) {
+func (m *MyGit) readIndex() (*index, error) {
 	path := filepath.Join(m.path, m.gitDirectory, DefaultIndexFile)
 	f, err := os.Open(path)
 	if err != nil {
@@ -80,13 +114,24 @@ func (m *MyGit) index() (*index, error) {
 			return nil, err
 		}
 	}
+	if err := binary.Read(f, binary.BigEndian, &index.sig); err != nil {
+		return nil, err
+	}
 
 	return index, nil
 }
 
+func (m *MyGit) ReadWriteIndex() error {
+	index, err := m.readIndex()
+	if err != nil {
+		return err
+	}
+	return m.writeIndex(index)
+}
+
 // LsFiles returns a list of files in the index
 func (m *MyGit) LsFiles() ([]string, error) {
-	index, err := m.index()
+	index, err := m.readIndex()
 	if err != nil {
 		return nil, err
 	}
