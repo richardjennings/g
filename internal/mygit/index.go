@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"syscall"
 	"time"
 )
 
@@ -52,9 +51,9 @@ type (
 		sha    []byte
 	}
 	idxFile struct {
-		path   string
-		status indexStatusTyp
-		sha    []byte
+		path string
+		//status indexStatusTyp
+		sha []byte
 	}
 )
 
@@ -66,37 +65,6 @@ const (
 	indexStatusDeleted                  // in last commit but not in index
 	indexStatusUnchanged
 )
-
-func (wdf *wdFile) toIndexItem() (*indexItem, error) {
-	if wdf.sha == nil {
-		return nil, errors.New("missing sha from working directory file toIndexItem")
-	}
-	item := &indexItem{indexItemP: &indexItemP{}}
-	item.CTimeS = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Ctimespec.Sec)
-	item.CTimeN = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Ctimespec.Nsec)
-	item.MTimeS = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Mtimespec.Sec)
-	item.MTimeN = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Mtimespec.Nsec)
-	item.Dev = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Dev)
-	item.Ino = uint32(wdf.finfo.Sys().(*syscall.Stat_t).Ino)
-	if wdf.finfo.IsDir() {
-		item.Mode = uint32(040000)
-	} else {
-		item.Mode = uint32(0100644)
-	}
-	item.Uid = wdf.finfo.Sys().(*syscall.Stat_t).Uid
-	item.Gid = wdf.finfo.Sys().(*syscall.Stat_t).Gid
-	item.Size = uint32(wdf.finfo.Size())
-	copy(item.Sha[:], wdf.sha)
-	nameLen := len(wdf.path)
-	if nameLen < 0xFFF {
-		item.Flags = uint16(len(wdf.path))
-	} else {
-		item.Flags = 0xFFF
-	}
-	item.Name = []byte(wdf.path)
-
-	return item, nil
-}
 
 func (idx *index) idxFiles() []*idxFile {
 	var files []*idxFile
@@ -128,10 +96,7 @@ func (idx *index) addWdFile(f *wdFile) error {
 		idx.header.NumEntries++
 		// and sort @todo more efficient
 		sort.Slice(idx.items, func(i, j int) bool {
-			if string(idx.items[i].Name) < string(idx.items[j].Name) {
-				return true
-			}
-			return false
+			return string(idx.items[i].Name) < string(idx.items[j].Name)
 		})
 	} else if f.status == indexStatusModified {
 		// @todo add support for changing existing entries when working dir file is changed
@@ -272,7 +237,7 @@ func (m *MyGit) wdStatus() ([]*wdFile, error) {
 
 	// check for any files in idxFileIdx that are not in wdFileIdx,
 	// these will have removed from working directory status
-	for v, _ := range idxFileIdx {
+	for v := range idxFileIdx {
 		if _, ok := wdFileIdx[v]; !ok {
 			// add a deleted file to wd files
 			files = append(files, &wdFile{path: v, status: indexStatusDeleted})
@@ -351,6 +316,9 @@ func (m *MyGit) Add(paths ...string) error {
 	}
 	// get working directory files with index status
 	wdFiles, err := m.wdStatus()
+	if err != nil {
+		return err
+	}
 	var updates []*wdFile
 	for _, p := range paths {
 		if p == "." {

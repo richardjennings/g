@@ -7,6 +7,7 @@ import (
 )
 
 type (
+/*
 	commit struct {
 		tree            string
 		previousCommits []string
@@ -15,6 +16,7 @@ type (
 		message         string
 		date            time.Time
 	}
+*/
 )
 
 func (m *MyGit) Commit() error {

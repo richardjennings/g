@@ -26,7 +26,7 @@ type (
 		typ     objectType
 		sha     []byte
 		objects []*object
-		mode    string
+		//mode    string
 	}
 	objectType int
 )
