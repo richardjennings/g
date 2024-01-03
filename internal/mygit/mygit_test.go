@@ -57,7 +57,7 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 	if err := Status(buf); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, "?? /hello\n", string(buf.Bytes()))
+	assert.Equal(t, "?? hello\n", buf.String())
 
 	// add the file to the index
 	if err := Add("."); err != nil {
@@ -71,7 +71,7 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 	if err := Status(buf); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, "", string(buf.Bytes()))
+	assert.Equal(t, "", buf.String())
 
 	// create commit
 	sha, err := Commit()
@@ -82,8 +82,8 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 		t.Errorf("expected sha len 20 got %d", len(sha))
 	}
 	files = testListFiles(t, config.ObjectPath(), false)
-	// blob, tree object, blob object, commit object
-	assert.Equal(t, 4, len(files))
+	// blob, tree object, commit object
+	assert.Equal(t, 3, len(files))
 }
 
 func testDir(t *testing.T) string {
