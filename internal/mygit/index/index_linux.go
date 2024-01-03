@@ -1,6 +1,6 @@
 //go:build linux
 
-package mygit
+package index
 
 import (
 	"os"

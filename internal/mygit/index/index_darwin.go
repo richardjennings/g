@@ -1,6 +1,6 @@
 //go:build darwin
 
-package mygit
+package index
 
 import (
 	"os"

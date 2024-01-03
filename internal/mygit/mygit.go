@@ -1,101 +1,143 @@
 package mygit
 
 import (
-	"io/fs"
-	"path/filepath"
-	"strings"
+	"errors"
+	"fmt"
+	"github.com/richardjennings/mygit/internal/mygit/commits"
+	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/internal/mygit/index"
+	"github.com/richardjennings/mygit/internal/mygit/objects"
+	"io"
+	"log"
+	"os"
+	"time"
 )
 
-const (
-	DefaultGitDirectory = ".git"
-	DefaultPath         = "."
-	DefaultHeadFile     = "HEAD"
-	DefaultIndexFile    = "index"
-	ObjectsDirectory    = "objects"
-	RefsDirectory       = "refs"
-	RefsHeadsDirectory  = "heads"
-)
-
-type (
-	MyGit struct {
-		gitDirectory string
-		path         string
-		gitIgnore    []string
+func Init() error {
+	path := config.GitPath()
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return err
 	}
-	Opt func(m *MyGit) error
-)
+	for _, v := range []string{
+		config.ObjectPath(),
+		config.RefsDirectory(),
+		config.RefsHeadsDirectory(),
+	} {
+		if err := os.MkdirAll(v, 0755); err != nil {
+			log.Fatalln(err)
+		}
+	}
+	// set default main branch
+	return os.WriteFile(config.GitHeadPath(), []byte(fmt.Sprintf("ref: %s\n", config.Config.DefaultBranch)), 0644)
+}
 
-func WithPath(path string) Opt {
-	return func(m *MyGit) error {
-		path, err := filepath.Abs(path)
-		if err != nil {
+func Add(paths ...string) error {
+	idx, err := index.ReadIndex()
+	if err != nil {
+		return err
+	}
+	// get working directory files with idx status
+	wdFiles, err := index.WdStatus()
+	if err != nil {
+		return err
+	}
+	var updates []*index.WdFile
+	for _, p := range paths {
+		if p == "." {
+			// special case meaning add everything
+			for _, v := range wdFiles {
+				switch v.Status {
+				case index.StatusUntracked, index.StatusModified, index.StatusDeleted:
+					updates = append(updates, v)
+				}
+			}
+		} else {
+			// @todo add support for paths other than just '.'
+			return errors.New("only supports '.' currently ")
+		}
+	}
+	for _, v := range updates {
+		switch v.Status {
+		case index.StatusUntracked, index.StatusModified:
+			// add the file to the object store
+			obj, err := objects.StoreBlob(v.Path)
+			if err != nil {
+				return err
+			}
+			v.Sha = obj.Sha
+		}
+		if err := idx.AddWdFile(v); err != nil {
 			return err
 		}
-		m.path = path
-		return nil
 	}
+	// once all wdFiles are added to idx struct, write it out
+	return index.WriteIndex(idx)
 }
 
-func WithGitDirectory(name string) Opt {
-	return func(m *MyGit) error {
-		m.gitDirectory = name
-		return nil
+// LsFiles returns a list of files in the index
+func LsFiles() ([]string, error) {
+	idx, err := index.ReadIndex()
+	if err != nil {
+		return nil, err
 	}
+	var files []string
+	for _, v := range idx.IdxFiles() {
+		files = append(files, v.Path)
+	}
+	return files, nil
 }
 
-func NewMyGit(opts ...Opt) (*MyGit, error) {
-	m := &MyGit{}
-	m.gitIgnore = []string{ //@todo read from .gitignore
-		".idea",
+func Commit() ([]byte, error) {
+	idx, err := index.ReadIndex()
+	if err != nil {
+		return nil, err
 	}
-	for _, opt := range opts {
-		if err := opt(m); err != nil {
-			return nil, err
-		}
+	root := index.ObjectTree(idx.IdxFiles())
+	tree, err := root.WriteTree()
+	if err != nil {
+		return nil, err
 	}
-	return m, nil
+
+	previousCommits, err := commits.PreviousCommits()
+	if err != nil {
+		return nil, err
+	}
+	return commits.Write(
+		&commits.Commit{
+			Tree:          tree,
+			Parents:       previousCommits,
+			Author:        "Richard Jennings <richardjennings@gmail.com>",
+			AuthoredTime:  time.Now(),
+			Committer:     "Richard Jennings <richardjennings@gmail.com>",
+			CommittedTime: time.Now(),
+			Message:       "test",
+		},
+	)
 }
 
-// list working directory files that are not ignored
-func (m *MyGit) wdFiles() ([]*wdFile, error) {
-	var wdFiles []*wdFile
-	if err := filepath.Walk(m.path, func(path string, info fs.FileInfo, err error) error {
-		if info.IsDir() {
-			return nil
-		}
-		// do not add ignored files
-		if !m.isIgnored(path) {
-			wdFiles = append(wdFiles, &wdFile{
-				path:  strings.TrimPrefix(path, m.path+string(filepath.Separator)),
-				finfo: info,
-			})
-		}
-		return nil
-	}); err != nil {
-		return wdFiles, err
+// Status currently displays the
+func Status(o io.Writer) error {
+	files, err := index.WdStatus()
+	if err != nil {
+		return err
 	}
-	return wdFiles, nil
-}
-
-func (m *MyGit) isIgnored(path string) bool {
-	// remove absolute portion of path
-	path = strings.TrimPrefix(path, m.path)
-	path = strings.TrimPrefix(path, string(filepath.Separator))
-	if path == "" {
-		return true
-	}
-	// @todo fix literal string prefix matching and iteration
-	for _, v := range m.gitIgnore {
-		if strings.HasPrefix(path, v) {
-			return true
+	var s string
+	for _, v := range files {
+		switch v.Status {
+		case index.StatusInvalid:
+			s = "x"
+		case index.StatusModified:
+			s = "M"
+		case index.StatusDeleted:
+			s = "D"
+		case index.StatusUntracked:
+			s = "??"
+		case index.StatusUnchanged:
+			continue
+		}
+		if _, err := fmt.Fprintf(o, "%s %s\n", s, v.Path); err != nil {
+			return err
 		}
 	}
-	// @todo remove special git case
-	if strings.HasPrefix(path, DefaultGitDirectory) {
-		return true
-	}
-	if strings.HasPrefix(path, m.gitDirectory) {
-		return true
-	}
-	return false
+	return nil
 }

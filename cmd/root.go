@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/richardjennings/mygit/internal/mygit"
+	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/spf13/cobra"
 	"log"
 )
@@ -13,16 +13,16 @@ var (
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&gitDirectoryFlag, "git-directory", mygit.DefaultGitDirectory, "--git-directory")
-	rootCmd.PersistentFlags().StringVar(&pathFlag, "path", mygit.DefaultPath, "--path")
+	rootCmd.PersistentFlags().StringVar(&gitDirectoryFlag, "git-directory", config.DefaultGitDirectory, "--git-directory")
+	rootCmd.PersistentFlags().StringVar(&pathFlag, "path", config.DefaultPath, "--path")
 }
 
-func myGit() (*mygit.MyGit, error) {
-	opts := []mygit.Opt{
-		mygit.WithGitDirectory(gitDirectoryFlag),
-		mygit.WithPath(pathFlag),
+func configure() error {
+	opts := []config.Opt{
+		config.WithGitDirectory(gitDirectoryFlag),
+		config.WithPath(pathFlag),
 	}
-	return mygit.NewMyGit(opts...)
+	return config.Configure(opts...)
 }
 
 func Execute() {
