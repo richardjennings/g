@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/richardjennings/mygit/internal/mygit"
 	"github.com/spf13/cobra"
 	"log"
 )
@@ -8,11 +9,10 @@ import (
 var initCmd = &cobra.Command{
 	Use: "init",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		m, err := myGit()
-		if err != nil {
+		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		return m.Init()
+		return mygit.Init()
 	},
 }
 
