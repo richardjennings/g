@@ -18,7 +18,9 @@ func WriteObject(header []byte, content []byte, contentFile string, path string)
 	var err error
 	h := sha1.New()
 	h.Write(header)
-	h.Write(content)
+	if len(content) > 0 {
+		h.Write(content)
+	}
 	if contentFile != "" {
 		f, err = os.Open(contentFile)
 		if err != nil {
@@ -56,11 +58,17 @@ func WriteObject(header []byte, content []byte, contentFile string, path string)
 	if _, err := z.Write(content); err != nil {
 		return nil, err
 	}
-	if f != nil {
+	if contentFile != "" {
+		f, err = os.Open(contentFile)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = f.Close() }()
 		if _, err := io.Copy(z, f); err != nil {
 			return nil, err
 		}
 	}
+	z.Close()
 	if err := os.Rename(tf.Name(), filepath.Join(path, hex.EncodeToString(sha)[2:])); err != nil {
 		return nil, err
 	}
