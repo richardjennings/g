@@ -129,6 +129,9 @@ func Status(o io.Writer) error {
 		return err
 	}
 	files, err := idx.CommitStatus(commitSha)
+	if err != nil {
+		return err
+	}
 	for _, v := range files {
 		if _, err := fmt.Fprintf(o, "%s %s\n", "A", v.Path); err != nil {
 			return err

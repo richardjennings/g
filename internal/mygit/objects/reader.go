@@ -19,7 +19,7 @@ func (o *Object) FlattenTree() []*ObjectFile {
 	}
 	for _, v := range o.Objects {
 		objs := v.FlattenTree()
-		for i, _ := range objs {
+		for i := range objs {
 			objs[i].Path = filepath.Join(o.Path, objs[i].Path)
 		}
 		objFiles = append(objFiles, objs...)
