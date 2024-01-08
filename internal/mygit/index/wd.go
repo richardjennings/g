@@ -2,9 +2,11 @@ package index
 
 import (
 	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/internal/mygit/objects"
 	"io"
 	"io/fs"
 	"os"
@@ -15,9 +17,48 @@ import (
 	"time"
 )
 
+func (idx *Index) CommitStatus(sha []byte) ([]*File, error) {
+	var files []*File
+	f := idx.IdxFiles()
+	if sha == nil {
+		for _, v := range f {
+			files = append(files, &File{Path: v.Path, Sha: v.Sha, Status: StatusAdded})
+		}
+		return files, nil
+	}
+	obj, err := objects.ReadObject(sha)
+	if err != nil {
+		return nil, err
+	}
+	objFiles := obj.FlattenTree()
+	objMap := make(map[string]*objects.ObjectFile)
+	itemMap := make(map[string]*IdxFile)
+	for _, o := range objFiles {
+		objMap[o.Path] = o
+	}
+	for _, o := range f {
+		itemMap[o.Path] = o
+	}
+	for _, v := range f {
+		item, ok := objMap[v.Path]
+		if !ok {
+			files = append(files, &File{Path: v.Path, Sha: v.Sha, Status: StatusAdded})
+		} else if string(item.Sha) != hex.EncodeToString(v.Sha) {
+			files = append(files, &File{Path: v.Path, Sha: v.Sha, Status: StatusModified})
+		}
+	}
+	for _, v := range objFiles {
+		if _, ok := itemMap[v.Path]; !ok {
+			files = append(files, &File{Path: v.Path, Sha: v.Sha, Status: StatusDeleted})
+		}
+	}
+
+	return files, nil
+}
+
 // Status returns a list of files in the working directory that are
 // modified, added or deleted.
-func WdStatus() ([]*WdFile, error) {
+func WdStatus() ([]*File, error) {
 	idx, err := ReadIndex()
 	if err != nil {
 		return nil, err
@@ -27,7 +68,7 @@ func WdStatus() ([]*WdFile, error) {
 		return nil, err
 	}
 	// create an Index for wd files
-	wdFileIdx := make(map[string]*WdFile)
+	wdFileIdx := make(map[string]*File)
 	for _, v := range files {
 		wdFileIdx[v.Path] = v
 	}
@@ -51,7 +92,7 @@ func WdStatus() ([]*WdFile, error) {
 	for v := range idxFileIdx {
 		if _, ok := wdFileIdx[v]; !ok {
 			// add a deleted file to wd files
-			files = append(files, &WdFile{Path: v, Status: StatusDeleted})
+			files = append(files, &File{Path: v, Status: StatusDeleted})
 		}
 	}
 
@@ -99,15 +140,15 @@ func WdStatus() ([]*WdFile, error) {
 }
 
 // list working directory files that are not ignored
-func WdFiles() ([]*WdFile, error) {
-	var wdFiles []*WdFile
+func WdFiles() ([]*File, error) {
+	var wdFiles []*File
 	if err := filepath.Walk(config.Path(), func(path string, info fs.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
 		}
 		// do not add ignored files
 		if !isIgnored(path) {
-			wdFiles = append(wdFiles, &WdFile{
+			wdFiles = append(wdFiles, &File{
 				Path:  strings.TrimPrefix(path, config.WorkingDirectory()),
 				Finfo: info,
 			})
@@ -142,7 +183,7 @@ func isIgnored(path string) bool {
 	return false
 }
 
-func (wdf *WdFile) toIndexItem() (*indexItem, error) {
+func (wdf *File) toIndexItem() (*indexItem, error) {
 	if wdf.Sha == nil {
 		return nil, errors.New("missing Sha from working directory file toIndexItem")
 	}

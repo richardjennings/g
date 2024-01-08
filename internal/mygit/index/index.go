@@ -47,7 +47,7 @@ type (
 	indexStatusTyp uint8
 
 	// represent working directory files and Index Status
-	WdFile struct {
+	File struct {
 		Path   string
 		Finfo  os.FileInfo
 		Status indexStatusTyp
@@ -69,7 +69,7 @@ func (idx *Index) IdxFiles() []*IdxFile {
 	return files
 }
 
-func (idx *Index) AddWdFile(f *WdFile) error {
+func (idx *Index) AddWdFile(f *File) error {
 	// if delete, remove from Index
 	if f.Status == StatusDeleted {
 		for i, v := range idx.items {

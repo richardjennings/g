@@ -7,6 +7,7 @@ import (
 	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/richardjennings/mygit/internal/mygit/index"
 	"github.com/richardjennings/mygit/internal/mygit/objects"
+	"github.com/richardjennings/mygit/internal/mygit/refs"
 	"io"
 	"log"
 	"os"
@@ -41,7 +42,7 @@ func Add(paths ...string) error {
 	if err != nil {
 		return err
 	}
-	var updates []*index.WdFile
+	var updates []*index.File
 	for _, p := range paths {
 		if p == "." {
 			// special case meaning add everything
@@ -60,7 +61,7 @@ func Add(paths ...string) error {
 		switch v.Status {
 		case index.StatusUntracked, index.StatusModified:
 			// add the file to the object store
-			obj, err := objects.StoreBlob(v.Path)
+			obj, err := objects.WriteBlob(v.Path)
 			if err != nil {
 				return err
 			}
@@ -117,7 +118,25 @@ func Commit() ([]byte, error) {
 
 // Status currently displays the
 func Status(o io.Writer) error {
-	files, err := index.WdStatus()
+	var err error
+	// index
+	idx, err := index.ReadIndex()
+	if err != nil {
+		return err
+	}
+	commitSha, err := refs.LastCommit()
+	if err != nil {
+		return err
+	}
+	files, err := idx.CommitStatus(commitSha)
+	for _, v := range files {
+		if _, err := fmt.Fprintf(o, "%s %s\n", "A", v.Path); err != nil {
+			return err
+		}
+	}
+
+	// working directory
+	files, err = index.WdStatus()
 	if err != nil {
 		return err
 	}

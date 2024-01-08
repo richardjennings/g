@@ -18,18 +18,12 @@ type (
 )
 
 func PreviousCommits() ([]string, error) {
-	// @todo check for a previous commit better
-	currentBranch, err := refs.CurrentBranch()
-	if err != nil {
-		return nil, err
-	}
-	var previousCommits []string
-	previousCommit, err := refs.HeadSHA(string(currentBranch))
+	previousCommit, err := refs.LastCommit()
 	if err != nil {
 		return nil, err
 	}
 	if previousCommit != nil {
-		previousCommits = append(previousCommits, string(previousCommit))
+		return []string{string(previousCommit)}, nil
 	}
-	return previousCommits, nil
+	return nil, nil
 }

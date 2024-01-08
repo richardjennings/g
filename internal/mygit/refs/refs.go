@@ -43,3 +43,11 @@ func CurrentBranch() ([]byte, error) {
 
 	return b[16 : len(b)-1], nil
 }
+
+func LastCommit() ([]byte, error) {
+	currentBranch, err := CurrentBranch()
+	if err != nil {
+		return nil, err
+	}
+	return HeadSHA(string(currentBranch))
+}

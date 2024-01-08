@@ -9,10 +9,15 @@ type (
 		//mode    string
 	}
 	objectType int
+	ObjectFile struct {
+		Path string
+		Sha  []byte
+	}
 )
 
 const (
 	ObjectInvalid objectType = iota
 	ObjectBlob
 	ObjectTree
+	ObjectCommit
 )
