@@ -57,7 +57,7 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 	if err := Status(buf); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, "?? hello\n", buf.String())
+	assert.Equal(t, " ?? hello\n", buf.String())
 
 	// add the file to the index
 	if err := Add("."); err != nil {
@@ -71,7 +71,7 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 	if err := Status(buf); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, "A hello\n", buf.String())
+	assert.Equal(t, "A  hello\n", buf.String())
 
 	// create commit
 	sha, err := Commit()
