@@ -15,6 +15,23 @@ const (
 	StatusUnchanged
 )
 
+func (ist indexStatusTyp) String() string {
+	switch ist {
+	case StatusModified:
+		return "M"
+	case StatusAdded:
+		return "A"
+	case StatusDeleted:
+		return "D"
+	case StatusUntracked:
+		return "??"
+	case StatusUnchanged:
+		return ""
+	default:
+		return "x"
+	}
+}
+
 type (
 	Index struct {
 		header *indexHeader

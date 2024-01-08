@@ -133,7 +133,10 @@ func Status(o io.Writer) error {
 		return err
 	}
 	for _, v := range files {
-		if _, err := fmt.Fprintf(o, "%s %s\n", "A", v.Path); err != nil {
+		if v.Status == index.StatusUnchanged {
+			continue
+		}
+		if _, err := fmt.Fprintf(o, "%s %s\n", v.Status, v.Path); err != nil {
 			return err
 		}
 	}
@@ -143,21 +146,11 @@ func Status(o io.Writer) error {
 	if err != nil {
 		return err
 	}
-	var s string
 	for _, v := range files {
-		switch v.Status {
-		case index.StatusInvalid:
-			s = "x"
-		case index.StatusModified:
-			s = "M"
-		case index.StatusDeleted:
-			s = "D"
-		case index.StatusUntracked:
-			s = "??"
-		case index.StatusUnchanged:
+		if v.Status == index.StatusUnchanged {
 			continue
 		}
-		if _, err := fmt.Fprintf(o, "%s %s\n", s, v.Path); err != nil {
+		if _, err := fmt.Fprintf(o, "%s %s\n", v.Status, v.Path); err != nil {
 			return err
 		}
 	}
