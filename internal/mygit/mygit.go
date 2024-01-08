@@ -136,7 +136,7 @@ func Status(o io.Writer) error {
 		if v.Status == index.StatusUnchanged {
 			continue
 		}
-		if _, err := fmt.Fprintf(o, "%s %s\n", v.Status, v.Path); err != nil {
+		if _, err := fmt.Fprintf(o, "%s  %s\n", v.Status, v.Path); err != nil {
 			return err
 		}
 	}
@@ -150,7 +150,7 @@ func Status(o io.Writer) error {
 		if v.Status == index.StatusUnchanged {
 			continue
 		}
-		if _, err := fmt.Fprintf(o, "%s %s\n", v.Status, v.Path); err != nil {
+		if _, err := fmt.Fprintf(o, " %s %s\n", v.Status, v.Path); err != nil {
 			return err
 		}
 	}
