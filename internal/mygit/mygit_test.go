@@ -35,7 +35,7 @@ func Test_DefaultBranch(t *testing.T) {
 
 	actual, err := refs.CurrentBranch()
 	assert.NoError(t, err)
-	expected := []byte("main")
+	expected := "main"
 	assert.Equal(t, expected, actual)
 }
 
@@ -57,7 +57,7 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 	if err := Status(buf); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, "?? hello\n", buf.String())
+	assert.Equal(t, " ?? hello\n", buf.String())
 
 	// add the file to the index
 	if err := Add("."); err != nil {
@@ -66,12 +66,12 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 	files := testListFiles(t, config.ObjectPath(), false)
 	assert.Equal(t, 1, len(files))
 
-	// status should be empty
+	// status should be added
 	buf = bytes.NewBuffer(nil)
 	if err := Status(buf); err != nil {
 		t.Fatal(err)
 	}
-	assert.Equal(t, "", buf.String())
+	assert.Equal(t, "A  hello\n", buf.String())
 
 	// create commit
 	sha, err := Commit()

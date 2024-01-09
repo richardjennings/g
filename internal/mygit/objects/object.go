@@ -15,4 +15,5 @@ const (
 	ObjectInvalid objectType = iota
 	ObjectBlob
 	ObjectTree
+	ObjectCommit
 )

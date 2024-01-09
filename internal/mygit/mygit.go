@@ -5,14 +5,17 @@ import (
 	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/commits"
 	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/internal/mygit/fs"
 	"github.com/richardjennings/mygit/internal/mygit/index"
 	"github.com/richardjennings/mygit/internal/mygit/objects"
+	"github.com/richardjennings/mygit/internal/mygit/refs"
 	"io"
 	"log"
 	"os"
 	"time"
 )
 
+// Init initializes a git repository
 func Init() error {
 	path := config.GitPath()
 	if err := os.MkdirAll(path, 0755); err != nil {
@@ -31,23 +34,24 @@ func Init() error {
 	return os.WriteFile(config.GitHeadPath(), []byte(fmt.Sprintf("ref: %s\n", config.Config.DefaultBranch)), 0644)
 }
 
+// Add adds one or more file paths to the Index.
 func Add(paths ...string) error {
 	idx, err := index.ReadIndex()
 	if err != nil {
 		return err
 	}
 	// get working directory files with idx status
-	wdFiles, err := index.WdStatus()
+	wdFiles, err := index.FsStatus(config.Path())
 	if err != nil {
 		return err
 	}
-	var updates []*index.WdFile
+	var updates []*fs.File
 	for _, p := range paths {
 		if p == "." {
 			// special case meaning add everything
 			for _, v := range wdFiles {
 				switch v.Status {
-				case index.StatusUntracked, index.StatusModified, index.StatusDeleted:
+				case fs.StatusUntracked, fs.StatusModified, fs.StatusDeleted:
 					updates = append(updates, v)
 				}
 			}
@@ -58,20 +62,20 @@ func Add(paths ...string) error {
 	}
 	for _, v := range updates {
 		switch v.Status {
-		case index.StatusUntracked, index.StatusModified:
+		case fs.StatusUntracked, fs.StatusModified:
 			// add the file to the object store
-			obj, err := objects.StoreBlob(v.Path)
+			obj, err := objects.WriteBlob(v.Path)
 			if err != nil {
 				return err
 			}
 			v.Sha = obj.Sha
 		}
-		if err := idx.AddWdFile(v); err != nil {
+		if err := idx.Add(v); err != nil {
 			return err
 		}
 	}
-	// once all wdFiles are added to idx struct, write it out
-	return index.WriteIndex(idx)
+	// once all files are added to idx struct, write it out
+	return idx.Write()
 }
 
 // LsFiles returns a list of files in the index
@@ -81,23 +85,25 @@ func LsFiles() ([]string, error) {
 		return nil, err
 	}
 	var files []string
-	for _, v := range idx.IdxFiles() {
+	for _, v := range idx.Files() {
 		files = append(files, v.Path)
 	}
 	return files, nil
 }
 
+// Commit writes a git commit object from the files in the index
 func Commit() ([]byte, error) {
 	idx, err := index.ReadIndex()
 	if err != nil {
 		return nil, err
 	}
-	root := index.ObjectTree(idx.IdxFiles())
+	root := index.ObjectTree(idx.Files())
 	tree, err := root.WriteTree()
 	if err != nil {
 		return nil, err
 	}
-
+	// git has the --allow-empty flag which here defaults to true currently
+	// @todo check for changes to be committed.
 	previousCommits, err := commits.PreviousCommits()
 	if err != nil {
 		return nil, err
@@ -115,27 +121,42 @@ func Commit() ([]byte, error) {
 	)
 }
 
-// Status currently displays the
+// Status currently displays the file statuses comparing the working directory
+// to the index and the index to the last commit (if any).
 func Status(o io.Writer) error {
-	files, err := index.WdStatus()
+	var err error
+	// index
+	idx, err := index.ReadIndex()
 	if err != nil {
 		return err
 	}
-	var s string
+	commitSha, err := refs.LastCommit()
+	if err != nil {
+		return err
+	}
+	files, err := idx.CommitStatus(commitSha)
+	if err != nil {
+		return err
+	}
 	for _, v := range files {
-		switch v.Status {
-		case index.StatusInvalid:
-			s = "x"
-		case index.StatusModified:
-			s = "M"
-		case index.StatusDeleted:
-			s = "D"
-		case index.StatusUntracked:
-			s = "??"
-		case index.StatusUnchanged:
+		if v.Status == fs.StatusUnchanged {
 			continue
 		}
-		if _, err := fmt.Fprintf(o, "%s %s\n", s, v.Path); err != nil {
+		if _, err := fmt.Fprintf(o, "%s  %s\n", v.Status, v.Path); err != nil {
+			return err
+		}
+	}
+
+	// working directory
+	files, err = index.FsStatus(config.Path())
+	if err != nil {
+		return err
+	}
+	for _, v := range files {
+		if v.Status == fs.StatusUnchanged {
+			continue
+		}
+		if _, err := fmt.Fprintf(o, " %s %s\n", v.Status, v.Path); err != nil {
 			return err
 		}
 	}

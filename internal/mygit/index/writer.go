@@ -9,10 +9,10 @@ import (
 	"os"
 )
 
-// WriteIndex writes an Index struct to the Git Index
-func WriteIndex(idx *Index) error {
+// Write writes an Index struct to the Git Index
+func (idx *Index) Write() error {
 	if idx.header.NumEntries != uint32(len(idx.items)) {
-		return errors.New("Index numEntries and length of items inconsistent")
+		return errors.New("index numEntries and length of items inconsistent")
 	}
 	path := config.IndexFilePath()
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0644)
