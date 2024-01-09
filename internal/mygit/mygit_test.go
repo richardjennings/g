@@ -84,6 +84,34 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 	files = testListFiles(t, config.ObjectPath(), false)
 	// blob, tree object, commit object
 	assert.Equal(t, 3, len(files))
+
+	// Test adding a modified file to the index
+
+	// update a file
+	if err := os.WriteFile(filepath.Join(dir, "hello"), []byte("hello world"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// status should be modified
+	buf = bytes.NewBuffer(nil)
+	if err := Status(buf); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, " M hello\n", buf.String())
+	// add the file to the index
+	if err := Add("."); err != nil {
+		t.Fatal(err)
+	}
+	// create commit
+	sha, err = Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// status should be empty
+	buf = bytes.NewBuffer(nil)
+	if err := Status(buf); err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "", buf.String())
 }
 
 func testDir(t *testing.T) string {
