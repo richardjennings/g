@@ -7,15 +7,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/internal/mygit/fs"
 	"io"
 	"os"
 	"path/filepath"
 )
 
-func (o *Object) FlattenTree() []*ObjectFile {
-	var objFiles []*ObjectFile
+// FlattenTree turns a TreeObject structure into a flat list of file paths
+func (o *Object) FlattenTree() []*fs.File {
+	var objFiles []*fs.File
 	if o.Typ == ObjectBlob {
-		return []*ObjectFile{{Path: o.Path, Sha: o.Sha}}
+		return []*fs.File{{Path: o.Path, Sha: o.Sha}}
 	}
 	for _, v := range o.Objects {
 		objs := v.FlattenTree()
@@ -28,22 +30,7 @@ func (o *Object) FlattenTree() []*ObjectFile {
 	return objFiles
 }
 
-func ReadCommitTree(sha []byte) (*Object, error) {
-	obj, err := ReadObject(sha)
-	if err != nil {
-		return nil, err
-	}
-	if obj.Typ != ObjectCommit {
-		return nil, errors.New("expected commit")
-	}
-	return obj, nil
-	//return ReadObject(sha)
-}
-
 // ReadObject reads an object from the object store
-// header
-//
-//	type lenNIL
 func ReadObject(sha []byte) (*Object, error) {
 	path := filepath.Join(config.ObjectPath(), string(sha[0:2]), string(sha[2:]))
 	f, err := os.OpenFile(path, os.O_RDONLY, 0644)
@@ -123,17 +110,6 @@ func ReadObject(sha []byte) (*Object, error) {
 				break
 			}
 
-			//if co.Typ == ObjectBlob {
-			//	continue
-			//}
-
-			//ooo, err := ReadObject(oo.Sha)
-			//if err != nil {
-			//	return nil, err
-			//}
-			//if ooo != nil {
-			//	oo.Objects = append(oo.Objects, ooo)
-			//}
 		}
 		return o, nil
 	case "blob":

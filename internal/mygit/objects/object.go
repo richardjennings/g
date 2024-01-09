@@ -9,10 +9,6 @@ type (
 		//mode    string
 	}
 	objectType int
-	ObjectFile struct {
-		Path string
-		Sha  []byte
-	}
 )
 
 const (

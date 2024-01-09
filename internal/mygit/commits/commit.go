@@ -17,6 +17,8 @@ type (
 	}
 )
 
+
+
 func PreviousCommits() ([]string, error) {
 	previousCommit, err := refs.LastCommit()
 	if err != nil {

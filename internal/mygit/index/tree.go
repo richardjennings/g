@@ -2,12 +2,15 @@ package index
 
 import (
 	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/internal/mygit/fs"
 	"github.com/richardjennings/mygit/internal/mygit/objects"
 	"path/filepath"
 	"strings"
 )
 
-func ObjectTree(files []*IdxFile) *objects.Object {
+// ObjectTree creates a Tree Object with child Objects representing the files and
+// paths in the provided files.
+func ObjectTree(files []*fs.File) *objects.Object {
 	root := &objects.Object{}
 	var n *objects.Object  // current node
 	var pn *objects.Object // previous node

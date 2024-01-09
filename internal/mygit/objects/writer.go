@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 )
 
+// WriteTree writes an Object Tree to the object store.
 func (o *Object) WriteTree() ([]byte, error) {
 	// resolve child tree Objects
 	for i, v := range o.Objects {
@@ -48,7 +49,7 @@ func (o *Object) writeTree() ([]byte, error) {
 	return WriteObject(header, content, "", config.ObjectPath())
 }
 
-// WriteObject writes an object
+// WriteObject writes an object to the object store
 func WriteObject(header []byte, content []byte, contentFile string, path string) ([]byte, error) {
 	var f *os.File
 	var err error
@@ -97,6 +98,8 @@ func WriteObject(header []byte, content []byte, contentFile string, path string)
 	return sha, os.WriteFile(path, buf.Bytes(), 0655)
 }
 
+// WriteBlob writes a file to the object store as a blob and returns
+// a Blob Object representation.
 func WriteBlob(path string) (*Object, error) {
 	path = filepath.Join(config.Path(), path)
 	finfo, err := os.Stat(path)

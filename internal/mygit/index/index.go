@@ -2,37 +2,14 @@ package index
 
 import (
 	"errors"
-	"os"
+	"github.com/richardjennings/mygit/internal/mygit/fs"
+	"runtime"
 	"sort"
+	"syscall"
 )
-
-const (
-	StatusInvalid   indexStatusTyp = iota
-	StatusModified                 // different in working directory than Index
-	StatusUntracked                // in working directory but not in Index
-	StatusAdded                    // in Index but not in last commit
-	StatusDeleted                  // in last commit but not in Index
-	StatusUnchanged
-)
-
-func (ist indexStatusTyp) String() string {
-	switch ist {
-	case StatusModified:
-		return "M"
-	case StatusAdded:
-		return "A"
-	case StatusDeleted:
-		return "D"
-	case StatusUntracked:
-		return "??"
-	case StatusUnchanged:
-		return ""
-	default:
-		return "x"
-	}
-}
 
 type (
+	// Index represents the Git Index
 	Index struct {
 		header *indexHeader
 		items  []*indexItem
@@ -61,34 +38,23 @@ type (
 		Sha    [20]byte
 		Flags  uint16 // length of filename
 	}
-	indexStatusTyp uint8
-
-	// represent working directory files and Index Status
-	File struct {
-		Path   string
-		Finfo  os.FileInfo
-		Status indexStatusTyp
-		Sha    []byte
-	}
-	IdxFile struct {
-		Path string
-		//Status indexStatusTyp
-		Sha []byte
-	}
 )
 
-func (idx *Index) IdxFiles() []*IdxFile {
-	var files []*IdxFile
+// Files lists the files in the index
+func (idx *Index) Files() []*fs.File {
+	var files []*fs.File
 	for _, v := range idx.items {
-		idx := &IdxFile{Path: string(v.Name), Sha: v.Sha[:]}
+		idx := &fs.File{Path: string(v.Name), Sha: v.Sha[:]}
 		files = append(files, idx)
 	}
 	return files
 }
 
-func (idx *Index) AddWdFile(f *File) error {
+// Add adds a fs.File to the Index Struct. A call to idx.Write is required
+// to flush the changes to the filesystem.
+func (idx *Index) Add(f *fs.File) error {
 	// if delete, remove from Index
-	if f.Status == StatusDeleted {
+	if f.Status == fs.StatusDeleted {
 		for i, v := range idx.items {
 			if string(v.Name) == f.Path {
 				idx.items = append(idx.items[0:i], idx.items[i+1:]...)
@@ -97,9 +63,9 @@ func (idx *Index) AddWdFile(f *File) error {
 			}
 		}
 		return errors.New("somehow the file was not found in Index items to be removed")
-	} else if f.Status == StatusUntracked {
+	} else if f.Status == fs.StatusUntracked {
 		// just add and sort all of them for now
-		item, err := f.toIndexItem()
+		item, err := item(f)
 		if err != nil {
 			return err
 		}
@@ -109,12 +75,46 @@ func (idx *Index) AddWdFile(f *File) error {
 		sort.Slice(idx.items, func(i, j int) bool {
 			return string(idx.items[i].Name) < string(idx.items[j].Name)
 		})
-	} else if f.Status == StatusModified {
+	} else if f.Status == fs.StatusModified {
 		// @todo add support for changing existing entries when working dir file is changed
 		return errors.New("updating modified file in Index not written yet")
 	}
 
 	return nil
+}
+
+func item(f *fs.File) (*indexItem, error) {
+	if f.Sha == nil {
+		return nil, errors.New("missing Sha from working directory file toIndexItem")
+	}
+	item := &indexItem{indexItemP: &indexItemP{}}
+	switch runtime.GOOS {
+	case "darwin":
+	case "linux":
+	default:
+		return nil, errors.New("setItemOsSpecificStat not implemented, unsupported OS")
+	}
+	setItemOsSpecificStat(f.Finfo, item)
+	item.Dev = uint32(f.Finfo.Sys().(*syscall.Stat_t).Dev)
+	item.Ino = uint32(f.Finfo.Sys().(*syscall.Stat_t).Ino)
+	if f.Finfo.IsDir() {
+		item.Mode = uint32(040000)
+	} else {
+		item.Mode = uint32(0100644)
+	}
+	item.Uid = f.Finfo.Sys().(*syscall.Stat_t).Uid
+	item.Gid = f.Finfo.Sys().(*syscall.Stat_t).Gid
+	item.Size = uint32(f.Finfo.Size())
+	copy(item.Sha[:], f.Sha)
+	nameLen := len(f.Path)
+	if nameLen < 0xFFF {
+		item.Flags = uint16(len(f.Path))
+	} else {
+		item.Flags = 0xFFF
+	}
+	item.Name = []byte(f.Path)
+
+	return item, nil
 }
 
 func newIndex() *Index {

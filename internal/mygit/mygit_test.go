@@ -35,7 +35,7 @@ func Test_DefaultBranch(t *testing.T) {
 
 	actual, err := refs.CurrentBranch()
 	assert.NoError(t, err)
-	expected := []byte("main")
+	expected := "main"
 	assert.Equal(t, expected, actual)
 }
 

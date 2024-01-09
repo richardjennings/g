@@ -32,5 +32,5 @@ func Write(c *Commit) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sha, refs.UpdateHead(string(branch), sha)
+	return sha, refs.UpdateHead(branch, sha)
 }

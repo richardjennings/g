@@ -8,7 +8,6 @@ import (
 )
 
 // ReadIndex reads the Git Index into an Index struct
-// @todo better implemented as a reader / writer
 func ReadIndex() (*Index, error) {
 	path := config.IndexFilePath()
 	f, err := os.Open(path)
