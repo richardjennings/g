@@ -76,8 +76,15 @@ func (idx *Index) Add(f *fs.File) error {
 			return string(idx.items[i].Name) < string(idx.items[j].Name)
 		})
 	} else if f.Status == fs.StatusModified {
-		// @todo add support for changing existing entries when working dir file is changed
-		return errors.New("updating modified file in Index not written yet")
+		for i, v := range idx.items {
+			if string(v.Name) == f.Path {
+				item, err := item(f)
+				if err != nil {
+					return err
+				}
+				idx.items[i] = item
+			}
+		}
 	}
 
 	return nil
