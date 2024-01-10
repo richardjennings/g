@@ -6,11 +6,13 @@ import (
 	"compress/zlib"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/richardjennings/mygit/internal/mygit/fs"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // FlattenTree turns a TreeObject structure into a flat list of file paths
@@ -30,93 +32,198 @@ func (o *Object) FlattenTree() []*fs.File {
 	return objFiles
 }
 
-// ReadObject reads an object from the object store
 func ReadObject(sha []byte) (*Object, error) {
-	path := filepath.Join(config.ObjectPath(), string(sha[0:2]), string(sha[2:]))
-	f, err := os.OpenFile(path, os.O_RDONLY, 0644)
+	var err error
+	o := &Object{Sha: sha}
+	o.ReadCloser = ObjectReadCloser(sha)
+	z, err := o.ReadCloser()
 	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-	z, err := zlib.NewReader(f)
-	if err != nil {
-		return nil, err
+		return o, err
 	}
 	defer func() { _ = z.Close() }()
 	buf := bufio.NewReader(z)
-
-	// read parts by null byte
 	p, err := buf.ReadBytes(0)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
-
+	o.HeaderLength = len(p)
 	header := bytes.Fields(p)
-	o := &Object{Sha: sha}
+
 	switch string(header[0]) {
 	case "commit":
 		o.Typ = ObjectCommit
-		content, err := buf.ReadBytes(0)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return nil, err
-		}
-		tree := bytes.Fields(content)
-		if len(tree) < 2 {
-			return nil, errors.New("expected at least 2 parts")
-		}
+	case "tree":
+		o.Typ = ObjectTree
+	case "blob":
+		o.Typ = ObjectBlob
+	default:
+		return nil, fmt.Errorf("unknown %s", string(header[0]))
+	}
+	o.Length, err = strconv.Atoi(string(header[1][:len(header[1])-1]))
+	return o, err
+}
 
-		_ = z.Close()
-
-		co, err := ReadObject(tree[1])
+func ObjectReadCloser(sha []byte) func() (io.ReadCloser, error) {
+	return func() (io.ReadCloser, error) {
+		path := filepath.Join(config.ObjectPath(), string(sha[0:2]), string(sha[2:]))
+		f, err := os.OpenFile(path, os.O_RDONLY, 0644)
 		if err != nil {
 			return nil, err
 		}
-		o.Objects = append(o.Objects, co)
-		return o, nil
-	case "tree":
-		o.Typ = ObjectTree
-		sha := make([]byte, 20)
+		defer func() { _ = f.Close() }()
+		return zlib.NewReader(f)
+	}
+}
 
-		// there should be a null byte after file path, then 20 byte sha
-		for {
-			p, err = buf.ReadBytes(0)
-
+// ReadObjectTree reads an object from the object store
+func ReadObjectTree(sha []byte) (*Object, error) {
+	obj, err := ReadObject(sha)
+	if err != nil {
+		return nil, err
+	}
+	switch obj.Typ {
+	case ObjectCommit:
+		commit, err := readCommit(obj)
+		if err != nil {
+			return obj, err
+		}
+		co, err := ReadObjectTree(commit.Tree)
+		if err != nil {
+			return nil, err
+		}
+		obj.Objects = append(obj.Objects, co)
+		return obj, nil
+	case ObjectTree:
+		tree, err := ReadTree(obj)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range tree.Items {
+			o, err := ReadObject(v.Sha)
 			if err != nil {
-				if errors.Is(err, io.EOF) {
-					break
-				}
 				return nil, err
 			}
-			_, err = io.ReadFull(buf, sha)
-			// buf.ReadBytes just keeps returning the same data with no error ?
-
-			item := bytes.Fields(p)
-			co := &Object{}
-			co.Sha = []byte(hex.EncodeToString(sha))
-			if string(item[0]) == "40000" {
-				co.Typ = ObjectTree
-				co, err = ReadObject(co.Sha)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				co.Typ = ObjectBlob
+			o.Path = v.Path
+			if o.Typ != v.Typ {
+				return nil, errors.New("types did not match somehow")
 			}
-			co.Path = string(item[1][:len(item[1])-1])
-
-			o.Objects = append(o.Objects, co)
-
-			if err == io.EOF {
-				break
-			}
-
+			obj.Objects = append(obj.Objects, o)
 		}
-		return o, nil
-	case "blob":
+		return obj, nil
+	case ObjectBlob:
 		// lets not read the whole blob
 		return nil, nil
-
-	default:
-		return nil, errors.New("unhandled object type")
 	}
+	return nil, errors.New("unhandled object type")
+
+}
+
+func ReadTree(obj *Object) (*Tree, error) {
+	var err error
+	var p []byte
+
+	tree := &Tree{}
+	r, err := obj.ReadCloser()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = r.Close() }()
+	if err := readHeadBytes(r, obj); err != nil {
+		return nil, err
+	}
+	//
+	sha := make([]byte, 20)
+	buf := bufio.NewReader(r)
+	// there should be a null byte after file path, then 20 byte sha
+	for {
+		itm := &TreeItem{}
+		p, err = buf.ReadBytes(0)
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+		_, err = io.ReadFull(buf, sha)
+		item := bytes.Fields(p)
+		itm.Sha = []byte(hex.EncodeToString(sha))
+		if string(item[0]) == "40000" {
+			itm.Typ = ObjectTree
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			itm.Typ = ObjectBlob
+		}
+		itm.Path = string(item[1][:len(item[1])-1])
+
+		if err == io.EOF {
+			break
+		}
+		tree.Items = append(tree.Items, itm)
+	}
+	return tree, nil
+}
+
+func readHeadBytes(r io.ReadCloser, obj *Object) error {
+	n, err := r.Read(make([]byte, obj.HeaderLength))
+	if err != nil {
+		return err
+	}
+	if n != obj.HeaderLength {
+		return fmt.Errorf("read %d not %d", n, obj.HeaderLength)
+	}
+	return nil
+}
+
+func ReadCommit(sha []byte) (*Commit, error) {
+	o, err := ReadObject(sha)
+	if err != nil {
+		return nil, err
+	}
+	return readCommit(o)
+}
+
+func readCommit(obj *Object) (*Commit, error) {
+	r, err := obj.ReadCloser()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = r.Close() }()
+	if err := readHeadBytes(r, obj); err != nil {
+		return nil, err
+	}
+	c := &Commit{Sha: obj.Sha}
+
+	buf := bufio.NewReader(r)
+	l, _, err := buf.ReadLine()
+	if err != nil {
+		return nil, err
+	}
+	b := bytes.Split(l, []byte(" "))
+	if len(b) != 2 || string(b[0]) != "tree" {
+		return nil, fmt.Errorf("invalid %s", string(l))
+	}
+	c.Tree = b[1]
+	for {
+		l, _, err = buf.ReadLine()
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				return nil, err
+			}
+			break
+		}
+		b := bytes.Split(l, []byte(" "))
+		if len(b) < 2 {
+			return nil, fmt.Errorf("invalid %s", string(l))
+		}
+		if string(b[0]) != "parent" {
+			break
+		} else {
+			c.Parents = append(c.Parents, b[1])
+		}
+	}
+
+	return c, nil
 }

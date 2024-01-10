@@ -3,7 +3,6 @@ package mygit
 import (
 	"errors"
 	"fmt"
-	"github.com/richardjennings/mygit/internal/mygit/commits"
 	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/richardjennings/mygit/internal/mygit/fs"
 	"github.com/richardjennings/mygit/internal/mygit/index"
@@ -32,6 +31,27 @@ func Init() error {
 	}
 	// set default main branch
 	return os.WriteFile(config.GitHeadPath(), []byte(fmt.Sprintf("ref: %s\n", config.Config.DefaultBranch)), 0644)
+}
+
+// Log prints out the commit log for the current branch
+func Log() error {
+	branch, err := refs.CurrentBranch()
+	if err != nil {
+		return err
+	}
+	commitSha, err := refs.HeadSHA(branch)
+	if err != nil {
+		return err
+	}
+	commit, err := objects.ReadCommit(commitSha)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("tree: %s\n", string(commit.Tree))
+	for _, v := range commit.Parents {
+		fmt.Printf("parent: %s\n", string(v))
+	}
+	return nil
 }
 
 // Add adds one or more file paths to the Index.
@@ -104,12 +124,12 @@ func Commit() ([]byte, error) {
 	}
 	// git has the --allow-empty flag which here defaults to true currently
 	// @todo check for changes to be committed.
-	previousCommits, err := commits.PreviousCommits()
+	previousCommits, err := refs.PreviousCommits()
 	if err != nil {
 		return nil, err
 	}
-	return commits.Write(
-		&commits.Commit{
+	return objects.WriteCommit(
+		&objects.Commit{
 			Tree:          tree,
 			Parents:       previousCommits,
 			Author:        "Richard Jennings <richardjennings@gmail.com>",

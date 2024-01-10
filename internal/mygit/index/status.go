@@ -25,7 +25,7 @@ func (idx *Index) CommitStatus(sha []byte) ([]*fs.File, error) {
 		}
 		return files, nil
 	}
-	obj, err := objects.ReadObject(sha)
+	obj, err := objects.ReadObjectTree(sha)
 	if err != nil {
 		return nil, err
 	}
