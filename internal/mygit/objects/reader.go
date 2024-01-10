@@ -185,6 +185,11 @@ func ReadCommit(sha []byte) (*Commit, error) {
 	return readCommit(o)
 }
 
+// The format for a commit object is simple:
+// it specifies the top-level tree for the snapshot of the project at that point;
+// the parent commits if any (the commit object described above does not have any parents);
+// the author/committer information (which uses your user.name and user.email configuration settings and a timestamp);
+// a blank line, and then the commit message.
 func readCommit(obj *Object) (*Commit, error) {
 	r, err := obj.ReadCloser()
 	if err != nil {
@@ -196,34 +201,39 @@ func readCommit(obj *Object) (*Commit, error) {
 	}
 	c := &Commit{Sha: obj.Sha}
 
-	buf := bufio.NewReader(r)
-	l, _, err := buf.ReadLine()
-	if err != nil {
-		return nil, err
-	}
-	b := bytes.Split(l, []byte(" "))
-	if len(b) != 2 || string(b[0]) != "tree" {
-		return nil, fmt.Errorf("invalid %s", string(l))
-	}
-	c.Tree = b[1]
+	s := bufio.NewScanner(r)
+	var parts [][]byte
+	parts = lineParts(s)
+	c.Tree = parts[1]
 	for {
-		l, _, err = buf.ReadLine()
-		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				return nil, err
-			}
-			break
-		}
-		b := bytes.Split(l, []byte(" "))
-		if len(b) < 2 {
-			return nil, fmt.Errorf("invalid %s", string(l))
-		}
-		if string(b[0]) != "parent" {
-			break
+		parts = lineParts(s)
+		if string(parts[0]) == "parent" {
+			c.Parents = append(c.Parents, parts[1])
 		} else {
-			c.Parents = append(c.Parents, b[1])
+			break
 		}
+	}
+	if string(parts[0]) != "author" {
+		return nil, fmt.Errorf("expected author got %s", string(parts[0]))
+	}
+	parts = lineParts(s)
+	if string(parts[0]) != "committer" {
+		return nil, fmt.Errorf("expected committer got %s", string(parts[0]))
+	}
+	s.Scan()
+	if s.Text() != "" {
+		return nil, fmt.Errorf("expected newline got %s", s.Text())
+	}
+	for {
+		if !s.Scan() {
+			break
+		}
+		c.Message = append(c.Message, s.Bytes()...)
 	}
 
 	return c, nil
+}
+func lineParts(s *bufio.Scanner) [][]byte {
+	s.Scan()
+	return bytes.Split(s.Bytes(), []byte(" "))
 }

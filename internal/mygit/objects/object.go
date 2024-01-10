@@ -1,6 +1,7 @@
 package objects
 
 import (
+	"fmt"
 	"io"
 	"time"
 )
@@ -25,7 +26,7 @@ type (
 		AuthoredTime  time.Time
 		Committer     string
 		CommittedTime time.Time
-		Message       string
+		Message       []byte
 	}
 	Tree struct {
 		Sha   []byte
@@ -46,3 +47,11 @@ const (
 	ObjectTree
 	ObjectCommit
 )
+
+func (c Commit) String() string {
+	fmt.Printf("tree: %s\n", string(c.Tree))
+	for _, v := range c.Parents {
+		fmt.Printf("parent: %s\n", string(v))
+	}
+	return fmt.Sprintf("message: \n%s\n", c.Message)
+}

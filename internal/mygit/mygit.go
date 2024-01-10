@@ -43,14 +43,16 @@ func Log() error {
 	if err != nil {
 		return err
 	}
-	commit, err := objects.ReadCommit(commitSha)
-	if err != nil {
-		return err
+	limit := 3
+	count := 0
+	for c, err := objects.ReadCommit(commitSha); c != nil && err == nil && len(c.Parents) > 0; c, err = objects.ReadCommit(c.Parents[0]) {
+		fmt.Println(c)
+		count++
+		if count >= limit {
+			break
+		}
 	}
-	fmt.Printf("tree: %s\n", string(commit.Tree))
-	for _, v := range commit.Parents {
-		fmt.Printf("parent: %s\n", string(v))
-	}
+
 	return nil
 }
 
@@ -136,7 +138,7 @@ func Commit() ([]byte, error) {
 			AuthoredTime:  time.Now(),
 			Committer:     "Richard Jennings <richardjennings@gmail.com>",
 			CommittedTime: time.Now(),
-			Message:       "test",
+			Message:       []byte("test"),
 		},
 	)
 }
