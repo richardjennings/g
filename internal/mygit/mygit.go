@@ -45,12 +45,12 @@ func Log() error {
 	}
 	limit := 3
 	count := 0
-	for c, err := objects.ReadCommit(commitSha); c != nil && err == nil && len(c.Parents) > 0; c, err = objects.ReadCommit(c.Parents[0]) {
+	for c, err := objects.ReadCommit(commitSha); c != nil && err == nil; c, err = objects.ReadCommit(c.Parents[0]) {
 		fmt.Println(c)
-		count++
-		if count >= limit {
+		if count >= limit || len(c.Parents) == 0 {
 			break
 		}
+		count++
 	}
 
 	return nil

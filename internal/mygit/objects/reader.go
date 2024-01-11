@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 // FlattenTree turns a TreeObject structure into a flat list of file paths
@@ -202,38 +203,84 @@ func readCommit(obj *Object) (*Commit, error) {
 	c := &Commit{Sha: obj.Sha}
 
 	s := bufio.NewScanner(r)
-	var parts [][]byte
-	parts = lineParts(s)
-	c.Tree = parts[1]
-	for {
-		parts = lineParts(s)
-		if string(parts[0]) == "parent" {
-			c.Parents = append(c.Parents, parts[1])
-		} else {
-			break
-		}
-	}
-	if string(parts[0]) != "author" {
-		return nil, fmt.Errorf("expected author got %s", string(parts[0]))
-	}
-	parts = lineParts(s)
-	if string(parts[0]) != "committer" {
-		return nil, fmt.Errorf("expected committer got %s", string(parts[0]))
-	}
-	s.Scan()
-	if s.Text() != "" {
-		return nil, fmt.Errorf("expected newline got %s", s.Text())
-	}
+
 	for {
 		if !s.Scan() {
 			break
 		}
-		c.Message = append(c.Message, s.Bytes()...)
+		l := s.Bytes()
+		p := bytes.SplitN(l, []byte(" "), 2)
+		t := string(p[0])
+		if c.Tree == nil {
+			if t != "tree" {
+				return nil, fmt.Errorf("expected tree got %s", t)
+			}
+			c.Tree = p[1]
+			continue
+		}
+		// can be parent
+		if t == "parent" {
+			c.Parents = append(c.Parents, p[1])
+			continue
+		}
+		if c.Author == "" {
+			// should be author
+			if t != "author" {
+				return nil, fmt.Errorf("expected author got %s", t)
+			}
+			// decode author line
+			if err := readAuthor(p[1], c); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if c.Committer == "" {
+			// should be committer
+			if t != "committer" {
+				return nil, fmt.Errorf("expected committer got %s", t)
+			}
+			// decode committer line
+			if err := readCommitter(p[1], c); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		// can be GPG Signature
+		if t == "gpgsig" {
+			// currently not implementing @todo implement signed commits
+			continue
+		}
+		// now we have the message body hopefully
+		c.Message = append(c.Message, l...)
 	}
 
 	return c, nil
 }
-func lineParts(s *bufio.Scanner) [][]byte {
-	s.Scan()
-	return bytes.Split(s.Bytes(), []byte(" "))
+
+func readAuthor(b []byte, c *Commit) error {
+	s := bytes.Index(b, []byte("<"))
+	e := bytes.Index(b, []byte(">"))
+	c.Author = string(b[0 : s-1])
+	c.AuthorEmail = string(b[s+1 : e])
+	ut, err := strconv.ParseInt(string(b[e+2:e+2+10]), 10, 64)
+	if err != nil {
+		return err
+	}
+	// @todo timezone part
+	c.AuthoredTime = time.Unix(ut, 0)
+	return nil
+}
+
+func readCommitter(b []byte, c *Commit) error {
+	s := bytes.Index(b, []byte("<"))
+	e := bytes.Index(b, []byte(">"))
+	c.Committer = string(b[0 : s-1])
+	c.CommitterEmail = string(b[s+1 : e])
+	ut, err := strconv.ParseInt(string(b[e+2:e+2+10]), 10, 64)
+	if err != nil {
+		return err
+	}
+	// @todo timezone part
+	c.CommittedTime = time.Unix(ut, 0)
+	return nil
 }
