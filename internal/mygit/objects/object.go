@@ -28,6 +28,7 @@ type (
 		Committer      string
 		CommitterEmail string
 		CommittedTime  time.Time
+		Sig            []byte
 		Message        []byte
 	}
 	Tree struct {

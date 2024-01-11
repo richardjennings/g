@@ -203,6 +203,7 @@ func readCommit(obj *Object) (*Commit, error) {
 	c := &Commit{Sha: obj.Sha}
 
 	s := bufio.NewScanner(r)
+	gpgsig := false
 
 	for {
 		if !s.Scan() {
@@ -247,11 +248,28 @@ func readCommit(obj *Object) (*Commit, error) {
 		}
 		// can be GPG Signature
 		if t == "gpgsig" {
-			// currently not implementing @todo implement signed commits
+			gpgsig = true
+			continue
+		}
+		if gpgsig {
+			if len(p[1]) == 0 {
+				continue
+			}
+			// @todo build up signature lines
+			if string(p[1]) != "-----END PGP SIGNATURE-----" {
+				c.Sig = append(c.Sig, l...)
+				c.Sig = append(c.Sig, []byte("\n")...)
+				continue
+			}
+			gpgsig = false
+			continue
+		}
+		if len(c.Message) == 0 && len(l) < 2 {
 			continue
 		}
 		// now we have the message body hopefully
 		c.Message = append(c.Message, l...)
+		c.Message = append(c.Message, []byte("\n")...)
 	}
 
 	return c, nil
