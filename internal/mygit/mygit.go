@@ -46,7 +46,7 @@ func Log(o io.Writer) error {
 	limit := 3
 	count := 0
 	for c, err := objects.ReadCommit(commitSha); c != nil && err == nil; c, err = objects.ReadCommit(c.Parents[0]) {
-		_, _ = fmt.Fprintln(o, c)
+		_, _ = fmt.Fprintf(o, "commit %s\nAuthor: %s <%s>\nDate:   %s\n\n%8s\n", c.Sha, c.Author, c.AuthorEmail, c.AuthoredTime.String(), c.Message)
 		if count >= limit || len(c.Parents) == 0 {
 			break
 		}
