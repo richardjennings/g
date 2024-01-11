@@ -34,7 +34,7 @@ func Init() error {
 }
 
 // Log prints out the commit log for the current branch
-func Log() error {
+func Log(o io.Writer) error {
 	branch, err := refs.CurrentBranch()
 	if err != nil {
 		return err
@@ -46,7 +46,7 @@ func Log() error {
 	limit := 3
 	count := 0
 	for c, err := objects.ReadCommit(commitSha); c != nil && err == nil; c, err = objects.ReadCommit(c.Parents[0]) {
-		fmt.Println(c)
+		_, _ = fmt.Fprintln(o, c)
 		if count >= limit || len(c.Parents) == 0 {
 			break
 		}

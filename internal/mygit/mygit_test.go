@@ -85,6 +85,8 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 
 	// status should be empty
 	testStatus(t, "")
+
+	_ = testLog(t)
 }
 
 func testDir(t *testing.T) string {
@@ -150,4 +152,13 @@ func testCommit(t *testing.T) []byte {
 		t.Errorf("expected sha len 20 got %d", len(sha))
 	}
 	return sha
+}
+
+func testLog(t *testing.T) []byte {
+	buf := bytes.NewBuffer(nil)
+	err := Log(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }

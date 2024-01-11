@@ -4,6 +4,7 @@ import (
 	"github.com/richardjennings/mygit/internal/mygit"
 	"github.com/spf13/cobra"
 	"log"
+	"os"
 )
 
 var logCmd = &cobra.Command{
@@ -13,7 +14,7 @@ var logCmd = &cobra.Command{
 		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		return mygit.Log()
+		return mygit.Log(os.Stdout)
 	},
 }
 

@@ -52,12 +52,14 @@ const (
 )
 
 func (c Commit) String() string {
-	fmt.Printf("commit: %s\n", string(c.Sha))
-	fmt.Printf("tree: %s\n", string(c.Tree))
+	var o string
+	o += fmt.Sprintf("commit: %s\n", string(c.Sha))
+	o += fmt.Sprintf("tree: %s\n", string(c.Tree))
 	for _, v := range c.Parents {
-		fmt.Printf("parent: %s\n", string(v))
+		o += fmt.Sprintf("parent: %s\n", string(v))
 	}
-	fmt.Printf("%s <%s> %s\n", c.Author, c.AuthorEmail, c.AuthoredTime.String())
-	fmt.Printf("%s <%s> %s\n", c.Committer, c.CommitterEmail, c.CommittedTime.String())
-	return fmt.Sprintf("message: \n%s\n", c.Message)
+	o += fmt.Sprintf("%s <%s> %s\n", c.Author, c.AuthorEmail, c.AuthoredTime.String())
+	o += fmt.Sprintf("%s <%s> %s\n", c.Committer, c.CommitterEmail, c.CommittedTime.String())
+	o += fmt.Sprintf("message: \n%s\n", c.Message)
+	return o
 }
