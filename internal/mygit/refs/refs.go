@@ -55,3 +55,14 @@ func LastCommit() ([]byte, error) {
 	}
 	return HeadSHA(currentBranch)
 }
+
+func PreviousCommits() ([][]byte, error) {
+	previousCommit, err := LastCommit()
+	if err != nil {
+		return nil, err
+	}
+	if previousCommit != nil {
+		return [][]byte{previousCommit}, nil
+	}
+	return nil, nil
+}
