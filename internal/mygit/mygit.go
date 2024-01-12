@@ -1,7 +1,6 @@
 package mygit
 
 import (
-	"errors"
 	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/richardjennings/mygit/internal/mygit/fs"
@@ -11,6 +10,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -78,8 +79,33 @@ func Add(paths ...string) error {
 				}
 			}
 		} else {
-			// @todo add support for paths other than just '.'
-			return errors.New("only supports '.' currently ")
+			found := false
+			for _, v := range wdFiles {
+				if v.Path == p {
+					switch v.Status {
+					case fs.StatusUntracked, fs.StatusModified, fs.StatusDeleted:
+						updates = append(updates, v)
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				// try directory @todo more efficient implementation
+				for _, v := range wdFiles {
+					if strings.HasPrefix(v.Path, p+string(filepath.Separator)) {
+						switch v.Status {
+						case fs.StatusUntracked, fs.StatusModified, fs.StatusDeleted:
+							updates = append(updates, v)
+						}
+						found = true
+					}
+				}
+			}
+
+			if !found {
+				return fmt.Errorf("fatal: pathspec '%s' did not match any files (directories not implemented yet)", p)
+			}
 		}
 	}
 	for _, v := range updates {

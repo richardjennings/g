@@ -100,7 +100,7 @@ func ReadObjectTree(sha []byte) (*Object, error) {
 			return nil, err
 		}
 		for _, v := range tree.Items {
-			o, err := ReadObject(v.Sha)
+			o, err := ReadObjectTree(v.Sha)
 			if err != nil {
 				return nil, err
 			}
@@ -113,7 +113,7 @@ func ReadObjectTree(sha []byte) (*Object, error) {
 		return obj, nil
 	case ObjectBlob:
 		// lets not read the whole blob
-		return nil, nil
+		return obj, nil
 	}
 	return nil, errors.New("unhandled object type")
 
@@ -123,13 +123,19 @@ func ReadTree(obj *Object) (*Tree, error) {
 	var err error
 	var p []byte
 
-	tree := &Tree{}
+	tree := &Tree{
+		Sha: obj.Sha,
+	}
 	r, err := obj.ReadCloser()
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = r.Close() }()
 	if err := readHeadBytes(r, obj); err != nil {
+		// Tree objects can be totally empty ...
+		if errors.Is(err, io.EOF) {
+			return tree, nil
+		}
 		return nil, err
 	}
 	//
