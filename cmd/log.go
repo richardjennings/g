@@ -16,8 +16,8 @@ var logCmd = &cobra.Command{
 		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		command, args := config.Pager()
-		c := exec.Command(command, args...)
+		cmdPath, cmdArgs := config.Pager()
+		c := exec.Command(cmdPath, cmdArgs...)
 		w, err := c.StdinPipe()
 		if err != nil {
 			return err
