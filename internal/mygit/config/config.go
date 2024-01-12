@@ -109,3 +109,7 @@ func RefsHeadsDirectory() string {
 func GitHeadPath() string {
 	return filepath.Join(Config.Path, Config.GitDirectory, Config.HeadFile)
 }
+
+func Pager() (string, []string) {
+	return "/usr/bin/less", []string{"-X", "-F"}
+}
