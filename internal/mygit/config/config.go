@@ -59,7 +59,7 @@ func Configure(opts ...Opt) error {
 		RefsHeadsDirectory: DefaultRefsHeadsDirectory,
 		DefaultBranch:      DefaultBranch,
 		GitIgnore: []string{ //@todo read from .gitignore
-			".idea",
+			".idea/",
 		},
 	}
 	for _, opt := range opts {

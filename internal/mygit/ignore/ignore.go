@@ -19,12 +19,5 @@ func IsIgnored(path string) bool {
 			return true
 		}
 	}
-	// @todo remove special git case
-	if strings.HasPrefix(path, config.DefaultGitDirectory) {
-		return true
-	}
-	if strings.HasPrefix(path, config.Config.GitDirectory) {
-		return true
-	}
-	return false
+	return strings.HasPrefix(path, config.Config.GitDirectory+string(filepath.Separator))
 }
