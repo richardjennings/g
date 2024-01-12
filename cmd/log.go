@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"github.com/richardjennings/mygit/internal/mygit"
+	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/spf13/cobra"
 	"log"
 	"os"
+	"os/exec"
 )
 
 var logCmd = &cobra.Command{
@@ -14,7 +16,19 @@ var logCmd = &cobra.Command{
 		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		return mygit.Log(os.Stdout)
+		cmdPath, cmdArgs := config.Pager()
+		c := exec.Command(cmdPath, cmdArgs...)
+		w, err := c.StdinPipe()
+		if err != nil {
+			return err
+		}
+		c.Stdout = os.Stdout
+		err = mygit.Log(w)
+		if err != nil {
+			return err
+		}
+		w.Close()
+		return c.Run()
 	},
 }
 
