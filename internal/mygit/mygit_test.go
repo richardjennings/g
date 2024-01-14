@@ -2,6 +2,7 @@ package mygit
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/richardjennings/mygit/internal/mygit/refs"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,7 @@ func Test_DefaultBranch(t *testing.T) {
 	assert.Equal(t, expected, actual)
 }
 
-func Test_AddFile_Status_Commit(t *testing.T) {
+func Test_End_To_End(t *testing.T) {
 	dir := testDir(t)
 	defer func() { _ = os.RemoveAll(dir) }()
 	testConfigure(t, dir)
@@ -47,6 +48,9 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 	if err := Init(); err != nil {
 		t.Fatal(err)
 	}
+
+	// list branches - after init there are none
+	testBranchLs(t, "")
 
 	// write a file
 	if err := os.WriteFile(filepath.Join(dir, "hello"), []byte("hello"), 0644); err != nil {
@@ -67,6 +71,9 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 	// create commit
 	testCommit(t)
 
+	// list branches - main should now show up as it has a commit
+	testBranchLs(t, "* main\n")
+
 	files = testListFiles(t, config.ObjectPath(), false)
 	// blob, tree object, commit object
 	assert.Equal(t, 3, len(files))
@@ -85,6 +92,22 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 
 	// status should be empty
 	testStatus(t, "")
+
+	// create a branch called test
+	assert.Nil(t, CreateBranch("test"))
+
+	// check it is now listed
+	testBranchLs(t, "* main\n  test\n")
+
+	// trying to delete current checkout branch gives error
+	err := DeleteBranch("main")
+	assert.Equal(t, fmt.Sprintf(DeleteBranchCheckedOutErrFmt, "main", dir), err.Error())
+
+	// delete test branch
+	assert.Nil(t, DeleteBranch("test"))
+
+	// should be just main left
+	testBranchLs(t, "* main\n")
 
 	_ = testLog(t)
 }
@@ -161,4 +184,13 @@ func testLog(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func testBranchLs(t *testing.T, expected string) {
+	buf := bytes.NewBuffer(nil)
+	err := ListBranches(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, expected, buf.String())
 }
