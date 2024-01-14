@@ -66,3 +66,18 @@ func PreviousCommits() ([][]byte, error) {
 	}
 	return nil, nil
 }
+
+func ListBranches() ([]string, error) {
+	var branches []string
+	f, err := os.ReadDir(config.RefsHeadsDirectory())
+	if err != nil {
+		return branches, err
+	}
+	for _, v := range f {
+		if v.IsDir() {
+			continue
+		}
+		branches = append(branches, v.Name())
+	}
+	return branches, nil
+}

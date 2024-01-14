@@ -48,6 +48,9 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// list branches - after init there are none
+	testBranchLs(t, "")
+
 	// write a file
 	if err := os.WriteFile(filepath.Join(dir, "hello"), []byte("hello"), 0644); err != nil {
 		t.Fatal(err)
@@ -66,6 +69,9 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 
 	// create commit
 	testCommit(t)
+
+	// list branches - main should now show up as it has a commit
+	testBranchLs(t, "* main\n")
 
 	files = testListFiles(t, config.ObjectPath(), false)
 	// blob, tree object, commit object
@@ -161,4 +167,13 @@ func testLog(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func testBranchLs(t *testing.T, expected string) {
+	buf := bytes.NewBuffer(nil)
+	err := ListBranches(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, expected, buf.String())
 }

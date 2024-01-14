@@ -207,3 +207,34 @@ func Status(o io.Writer) error {
 	}
 	return nil
 }
+
+func DeleteBranch() {
+
+}
+
+func CreateBranch() {
+
+}
+
+func ListBranches(o io.Writer) error {
+	var err error
+	currentBranch, err := refs.CurrentBranch()
+	if err != nil {
+		return err
+	}
+	branches, err := refs.ListBranches()
+	if err != nil {
+		return err
+	}
+	for _, v := range branches {
+		if v == currentBranch {
+			_, err = o.Write([]byte(fmt.Sprintf("* %v\n", v)))
+		} else {
+			_, err = o.Write([]byte(fmt.Sprintf("  %v\n", v)))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
