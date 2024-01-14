@@ -39,7 +39,7 @@ func Test_DefaultBranch(t *testing.T) {
 	assert.Equal(t, expected, actual)
 }
 
-func Test_AddFile_Status_Commit(t *testing.T) {
+func Test_End_To_End(t *testing.T) {
 	dir := testDir(t)
 	defer func() { _ = os.RemoveAll(dir) }()
 	testConfigure(t, dir)
@@ -91,6 +91,12 @@ func Test_AddFile_Status_Commit(t *testing.T) {
 
 	// status should be empty
 	testStatus(t, "")
+
+	// create a branch called test
+	assert.Nil(t, CreateBranch("test"))
+
+	// check it is now listed
+	testBranchLs(t, "* main\n  test\n")
 
 	_ = testLog(t)
 }

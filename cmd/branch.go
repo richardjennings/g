@@ -9,12 +9,20 @@ import (
 
 var branchCmd = &cobra.Command{
 	Use:  "branch <path> ...",
-	Args: cobra.MinimumNArgs(0),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		return mygit.ListBranches(os.Stdout)
+		if len(args) == 0 {
+			// default to list branches
+			return mygit.ListBranches(os.Stdout)
+		}
+		if len(args) == 1 {
+			// create a branch
+			return mygit.CreateBranch(args[0])
+		}
+		return nil
 	},
 }
 

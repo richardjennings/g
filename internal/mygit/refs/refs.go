@@ -81,3 +81,15 @@ func ListBranches() ([]string, error) {
 	}
 	return branches, nil
 }
+
+func CreateBranch(name string) error {
+	currentBranch, err := CurrentBranch()
+	if err != nil {
+		return err
+	}
+	head, err := HeadSHA(currentBranch)
+	if err != nil {
+		return err
+	}
+	return UpdateHead(name, head)
+}

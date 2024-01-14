@@ -212,8 +212,8 @@ func DeleteBranch() {
 
 }
 
-func CreateBranch() {
-
+func CreateBranch(name string) error {
+	return refs.CreateBranch(name)
 }
 
 func ListBranches(o io.Writer) error {
