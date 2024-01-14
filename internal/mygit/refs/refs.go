@@ -91,7 +91,11 @@ func CreateBranch(name string) error {
 	if err != nil {
 		return err
 	}
-	return UpdateHead(name, head)
+	sha := make([]byte, 20)
+	if _, err := hex.Decode(sha, head); err != nil {
+		return err
+	}
+	return UpdateHead(name, sha)
 }
 
 func DeleteBranch(name string) error {
