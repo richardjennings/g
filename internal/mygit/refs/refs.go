@@ -93,3 +93,7 @@ func CreateBranch(name string) error {
 	}
 	return UpdateHead(name, head)
 }
+
+func DeleteBranch(name string) error {
+	return os.Remove(filepath.Join(config.RefsHeadsDirectory(), name))
+}

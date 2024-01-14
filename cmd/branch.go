@@ -7,6 +7,8 @@ import (
 	"os"
 )
 
+var branchDelete bool
+
 var branchCmd = &cobra.Command{
 	Use:  "branch <path> ...",
 	Args: cobra.MaximumNArgs(1),
@@ -19,13 +21,18 @@ var branchCmd = &cobra.Command{
 			return mygit.ListBranches(os.Stdout)
 		}
 		if len(args) == 1 {
-			// create a branch
-			return mygit.CreateBranch(args[0])
+			if branchDelete {
+				return mygit.DeleteBranch(args[0])
+			} else {
+				// create a branch
+				return mygit.CreateBranch(args[0])
+			}
 		}
 		return nil
 	},
 }
 
 func init() {
+	branchCmd.Flags().BoolVarP(&branchDelete, "delete", "d", false, "--delete <branch>")
 	rootCmd.AddCommand(branchCmd)
 }

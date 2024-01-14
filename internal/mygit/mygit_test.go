@@ -2,6 +2,7 @@ package mygit
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/richardjennings/mygit/internal/mygit/refs"
 	"github.com/stretchr/testify/assert"
@@ -97,6 +98,16 @@ func Test_End_To_End(t *testing.T) {
 
 	// check it is now listed
 	testBranchLs(t, "* main\n  test\n")
+
+	// trying to delete current checkout branch gives error
+	err := DeleteBranch("main")
+	assert.Equal(t, fmt.Sprintf(DeleteBranchCheckedOutErrFmt, "main", dir), err.Error())
+
+	// delete test branch
+	assert.Nil(t, DeleteBranch("test"))
+
+	// should be just main left
+	testBranchLs(t, "* main\n")
 
 	_ = testLog(t)
 }
