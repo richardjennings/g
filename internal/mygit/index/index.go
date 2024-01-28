@@ -2,7 +2,10 @@ package index
 
 import (
 	"errors"
+	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/richardjennings/mygit/internal/mygit/fs"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"syscall"
@@ -44,7 +47,8 @@ type (
 func (idx *Index) Files() []*fs.File {
 	var files []*fs.File
 	for _, v := range idx.items {
-		idx := &fs.File{Path: string(v.Name), Sha: v.Sha[:]}
+		s, _ := fs.NewSha(v.Sha[:])
+		idx := &fs.File{Path: string(v.Name), Sha: s}
 		files = append(files, idx)
 	}
 	return files
@@ -94,6 +98,13 @@ func item(f *fs.File) (*indexItem, error) {
 	if f.Sha == nil {
 		return nil, errors.New("missing Sha from working directory file toIndexItem")
 	}
+	if f.Finfo == nil {
+		info, err := os.Stat(filepath.Join(config.Path(), f.Path))
+		if err != nil {
+			return nil, err
+		}
+		f.Finfo = info
+	}
 	item := &indexItem{indexItemP: &indexItemP{}}
 	switch runtime.GOOS {
 	case "darwin":
@@ -112,7 +123,7 @@ func item(f *fs.File) (*indexItem, error) {
 	item.Uid = f.Finfo.Sys().(*syscall.Stat_t).Uid
 	item.Gid = f.Finfo.Sys().(*syscall.Stat_t).Gid
 	item.Size = uint32(f.Finfo.Size())
-	copy(item.Sha[:], f.Sha)
+	item.Sha = f.Sha.AsArray()
 	nameLen := len(f.Path)
 	if nameLen < 0xFFF {
 		item.Flags = uint16(len(f.Path))

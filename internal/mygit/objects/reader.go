@@ -20,7 +20,9 @@ import (
 func (o *Object) FlattenTree() []*fs.File {
 	var objFiles []*fs.File
 	if o.Typ == ObjectBlob {
-		return []*fs.File{{Path: o.Path, Sha: o.Sha}}
+		s, _ := fs.NewSha(o.Sha)
+		f := []*fs.File{{Path: o.Path, Sha: s}}
+		return f
 	}
 	for _, v := range o.Objects {
 		objs := v.FlattenTree()
@@ -307,4 +309,12 @@ func readCommitter(b []byte, c *Commit) error {
 	// @todo timezone part
 	c.CommittedTime = time.Unix(ut, 0)
 	return nil
+}
+
+func CommittedFiles(sha []byte) ([]*fs.File, error) {
+	obj, err := ReadObjectTree(sha)
+	if err != nil {
+		return nil, err
+	}
+	return obj.FlattenTree(), nil
 }

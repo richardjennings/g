@@ -113,7 +113,7 @@ func Add(paths ...string) error {
 			if err != nil {
 				return err
 			}
-			v.Sha = obj.Sha
+			v.Sha, _ = fs.NewSha(obj.Sha)
 		}
 		if err := idx.Add(v); err != nil {
 			return err
@@ -151,6 +151,7 @@ func Commit() ([]byte, error) {
 	// @todo check for changes to be committed.
 	previousCommits, err := refs.PreviousCommits()
 	if err != nil {
+		// @todo error types to check for e.g no previous commits as source of error
 		return nil, err
 	}
 	return objects.WriteCommit(
@@ -177,9 +178,10 @@ func Status(o io.Writer) error {
 	}
 	commitSha, err := refs.LastCommit()
 	if err != nil {
+		// @todo error types to check for e.g no previous commits as source of error
 		return err
 	}
-	files, err := idx.CommitStatus(commitSha)
+	files, err := idx.CommitIndexStatus(commitSha)
 	if err != nil {
 		return err
 	}
@@ -247,5 +249,122 @@ func ListBranches(o io.Writer) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func SwitchBranch(name string) error {
+
+	// index
+	idx, err := index.ReadIndex()
+	if err != nil {
+		return err
+	}
+
+	// get commit sha
+	commitSha, err := refs.HeadSHA(name)
+	if err != nil {
+		return err
+	}
+
+	if commitSha == nil {
+		return fmt.Errorf("fatal: invalid reference: %s", name)
+	}
+
+	// get commit files
+	commitFiles, err := objects.CommittedFiles(commitSha)
+	if err != nil {
+		return err
+	}
+
+	// @todo determining if changes would be lost by switching branch ....
+
+	// remove files from working directory not in commit files
+	// get working directory files
+	files, err := fs.Ls(config.Path())
+	if err != nil {
+		return err
+	}
+	// status compared to commit
+	files, err = index.CompareAsCommit(commitFiles, files)
+	if err != nil {
+		return err
+	}
+	// delete any files not in branch
+	for _, v := range files {
+		if v.Status == fs.StatusAdded {
+			if err := os.Remove(filepath.Join(config.Path(), v.Path)); err != nil {
+				return err
+			}
+		}
+	}
+	// check for index changes
+	idxFiles := idx.Files()
+	files, err = index.CompareAsCommit(commitFiles, idxFiles)
+	if err != nil {
+		return err
+	}
+	// swap added status for removed
+	for _, v := range files {
+		if v.Status == fs.StatusAdded {
+			v.Status = fs.StatusDeleted
+			// remove from index
+			if err := idx.Add(v); err != nil {
+				return err
+			}
+		}
+	}
+
+	for _, v := range commitFiles {
+		obj, err := objects.ReadObject(v.Sha.AsHexBytes())
+		if err != nil {
+			return err
+		}
+		r, err := obj.ReadCloser()
+		if err != nil {
+			return err
+		}
+		buf := make([]byte, obj.HeaderLength)
+		if _, err := r.Read(buf); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(filepath.Join(config.Path(), v.Path), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0655)
+		if err != nil {
+			return err
+		}
+
+		if _, err := io.Copy(f, r); err != nil {
+			return err
+		}
+		if err := r.Close(); err != nil {
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+		// add to index if needed
+		inIndex := false
+		for _, f := range idxFiles {
+			if f.Path == v.Path {
+				inIndex = true
+				break
+			}
+		}
+		if !inIndex {
+			v.Status = fs.StatusUntracked
+			if err := idx.Add(v); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := idx.Write(); err != nil {
+		return err
+	}
+
+	// update HEAD
+	if err := refs.UpdateHead(name); err != nil {
+		return err
+	}
+
 	return nil
 }

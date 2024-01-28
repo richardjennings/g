@@ -19,13 +19,13 @@ func ObjectTree(files []*fs.File) *objects.Object {
 	for _, v := range files {
 		parts := strings.Split(strings.TrimPrefix(v.Path, config.WorkingDirectory()), string(filepath.Separator))
 		if len(parts) == 1 {
-			root.Objects = append(root.Objects, &objects.Object{Typ: objects.ObjectBlob, Path: v.Path, Sha: v.Sha})
+			root.Objects = append(root.Objects, &objects.Object{Typ: objects.ObjectBlob, Path: v.Path, Sha: v.Sha.AsBytes()})
 			continue // top level file
 		}
 		pn = root
 		for i, p := range parts {
 			if i == len(parts)-1 {
-				pn.Objects = append(pn.Objects, &objects.Object{Typ: objects.ObjectBlob, Path: v.Path, Sha: v.Sha})
+				pn.Objects = append(pn.Objects, &objects.Object{Typ: objects.ObjectBlob, Path: v.Path, Sha: v.Sha.AsBytes()})
 				continue // leaf
 			}
 			// key for cached nodes

@@ -1,6 +1,8 @@
 package fs
 
 import (
+	"encoding/hex"
+	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/richardjennings/mygit/internal/mygit/ignore"
 	"os"
@@ -21,11 +23,58 @@ type (
 	File struct {
 		Path   string
 		Status FileStatus
-		Sha    []byte
+		Sha    *Sha
 		Finfo  os.FileInfo
+	}
+	Sha struct {
+		hash [20]byte
 	}
 	FileStatus uint8
 )
+
+func NewSha(b []byte) (*Sha, error) {
+	if len(b) == 40 {
+		s := &Sha{}
+		_, _ = hex.Decode(s.hash[:], b)
+		return s, nil
+	}
+	if len(b) == 20 {
+		s := &Sha{}
+		copy(s.hash[:], b)
+		return s, nil
+	}
+	return nil, fmt.Errorf("invalid sha %s", b)
+}
+
+func (s *Sha) Same(ss *Sha) bool {
+	if ss == nil {
+		return false
+	}
+	if s == nil {
+		return false
+	}
+	return s.hash == ss.hash
+}
+
+func (s Sha) AsHexString() string {
+	return hex.EncodeToString(s.hash[:])
+}
+func (s Sha) AsHexBytes() []byte {
+	b := make([]byte, 40)
+	hex.Encode(b, s.hash[:])
+	return b
+}
+
+func (s Sha) AsArray() [20]byte {
+	var r [20]byte
+	copy(r[:], s.hash[:])
+	return r
+}
+
+// @todo this is more AsSlice ...
+func (s Sha) AsBytes() []byte {
+	return s.hash[:]
+}
 
 func (ist FileStatus) String() string {
 	switch ist {
@@ -48,6 +97,9 @@ func (ist FileStatus) String() string {
 func Ls(path string) ([]*File, error) {
 	var files []*File
 	if err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
 		if info.IsDir() {
 			return nil
 		}

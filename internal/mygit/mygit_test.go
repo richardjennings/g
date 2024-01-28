@@ -108,8 +108,26 @@ func Test_End_To_End(t *testing.T) {
 
 	// should be just main left
 	testBranchLs(t, "* main\n")
+	testLog(t)
 
-	_ = testLog(t)
+	// create a branch called test2
+	assert.Nil(t, CreateBranch("test2"))
+
+	// add a file to main and commit
+	if err := os.WriteFile(filepath.Join(dir, "world"), []byte("world"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	testAdd(t, "world", 2)
+	testCommit(t)
+	testStatus(t, "")
+
+	// test2 branch does not include world, switch to it and check status
+	testSwitchBranch(t, "test2")
+	testStatus(t, "")
+
+	// switch back to main, should get file back
+	testSwitchBranch(t, "main")
+	testStatus(t, "")
 }
 
 func testDir(t *testing.T) string {
@@ -193,4 +211,10 @@ func testBranchLs(t *testing.T, expected string) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, expected, buf.String())
+}
+
+func testSwitchBranch(t *testing.T, branch string) {
+	if err := SwitchBranch(branch); err != nil {
+		t.Fatal(err)
+	}
 }

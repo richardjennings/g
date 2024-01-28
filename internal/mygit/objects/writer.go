@@ -136,5 +136,5 @@ func WriteCommit(c *Commit) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sha, refs.UpdateHead(branch, sha)
+	return sha, refs.UpdateBranchHead(branch, sha)
 }

@@ -2,7 +2,6 @@ package index
 
 import (
 	"crypto/sha1"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
@@ -14,22 +13,22 @@ import (
 	"time"
 )
 
-// CommitStatus returns a slice of files with status flags indicating if a file in a
-// commit is absent in the index, modified in the index, or added in the index.
-func (idx *Index) CommitStatus(sha []byte) ([]*fs.File, error) {
-	var files []*fs.File
-	f := idx.Files()
-	if sha == nil {
-		for _, v := range f {
-			files = append(files, &fs.File{Path: v.Path, Sha: v.Sha, Status: fs.StatusAdded})
+func (idx *Index) CommitIndexStatus(sha []byte) ([]*fs.File, error) {
+	var objFiles []*fs.File
+	var err error
+	if sha != nil {
+		objFiles, err = objects.CommittedFiles(sha)
+		if err != nil {
+			return nil, err
 		}
-		return files, nil
 	}
-	obj, err := objects.ReadObjectTree(sha)
-	if err != nil {
-		return nil, err
-	}
-	objFiles := obj.FlattenTree()
+
+	return CompareAsCommit(objFiles, idx.Files())
+}
+
+func CompareAsCommit(objFiles []*fs.File, f []*fs.File) ([]*fs.File, error) {
+	var files []*fs.File
+
 	objMap := make(map[string]*fs.File)
 	itemMap := make(map[string]*fs.File)
 	for _, o := range objFiles {
@@ -42,12 +41,13 @@ func (idx *Index) CommitStatus(sha []byte) ([]*fs.File, error) {
 		item, ok := objMap[v.Path]
 		if !ok {
 			files = append(files, &fs.File{Path: v.Path, Sha: v.Sha, Status: fs.StatusAdded})
-		} else if string(item.Sha) != hex.EncodeToString(v.Sha) {
+			continue
+		} else if !item.Sha.Same(v.Sha) {
 			files = append(files, &fs.File{Path: v.Path, Sha: v.Sha, Status: fs.StatusModified})
 		}
 	}
 	for _, v := range objFiles {
-		if _, ok := itemMap[v.Path]; !ok {
+		if _, ok := objMap[v.Path]; !ok {
 			files = append(files, &fs.File{Path: v.Path, Sha: v.Sha, Status: fs.StatusDeleted})
 		}
 	}
