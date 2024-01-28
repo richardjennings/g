@@ -289,16 +289,23 @@ func SwitchBranch(name string) error {
 	if err != nil {
 		return err
 	}
-	// delete any files not in branch
+	idxFiles := idx.Files()
+	idxMap := make(map[string]*fs.File)
+	for _, v := range idxFiles {
+		idxMap[v.Path] = v
+	}
+	// delete any files not in branch - and, not in index,
 	for _, v := range files {
 		if v.Status == fs.StatusAdded {
-			if err := os.Remove(filepath.Join(config.Path(), v.Path)); err != nil {
-				return err
+			if _, ok := idxMap[v.Path]; ok {
+				if err := os.Remove(filepath.Join(config.Path(), v.Path)); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	// check for index changes
-	idxFiles := idx.Files()
+
 	files, err = index.CompareAsCommit(commitFiles, idxFiles)
 	if err != nil {
 		return err
