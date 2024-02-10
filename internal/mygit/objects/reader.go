@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
-	"github.com/richardjennings/mygit/internal/mygit/fs"
+	"github.com/richardjennings/mygit/internal/mygit/gfs"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,11 +17,11 @@ import (
 )
 
 // FlattenTree turns a TreeObject structure into a flat list of file paths
-func (o *Object) FlattenTree() []*fs.File {
-	var objFiles []*fs.File
+func (o *Object) FlattenTree() []*gfs.File {
+	var objFiles []*gfs.File
 	if o.Typ == ObjectBlob {
-		s, _ := fs.NewSha(o.Sha)
-		f := []*fs.File{{Path: o.Path, Sha: s}}
+		s, _ := gfs.NewSha(o.Sha)
+		f := []*gfs.File{{Path: o.Path, Sha: s}}
 		return f
 	}
 	for _, v := range o.Objects {
@@ -311,7 +311,7 @@ func readCommitter(b []byte, c *Commit) error {
 	return nil
 }
 
-func CommittedFiles(sha []byte) ([]*fs.File, error) {
+func CommittedFiles(sha []byte) ([]*gfs.File, error) {
 	obj, err := ReadObjectTree(sha)
 	if err != nil {
 		return nil, err

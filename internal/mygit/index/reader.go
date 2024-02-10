@@ -13,7 +13,7 @@ func ReadIndex() (*Index, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return newIndex(), nil
+			return NewIndex(), nil
 		}
 		return nil, err
 	}

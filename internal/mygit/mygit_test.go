@@ -45,33 +45,41 @@ func Test_End_To_End(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dir) }()
 	testConfigure(t, dir)
 
+	// git init
 	if err := Init(); err != nil {
 		t.Fatal(err)
 	}
 
 	// list branches - after init there are none
+	// git branch
 	testBranchLs(t, "")
 
 	// write a file
+	// echo "hello" > hello
 	if err := os.WriteFile(filepath.Join(dir, "hello"), []byte("hello"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// status should have an object
-	testStatus(t, " ?? hello\n")
+	// git status --porcelain
+	testStatus(t, "?? hello\n")
 
 	// add the file to the index
+	// git add .
 	testAdd(t, ".", 1)
 	files := testListFiles(t, config.ObjectPath(), false)
 	assert.Equal(t, 1, len(files))
 
 	// status should be added
+	// git status --porcelain
 	testStatus(t, "A  hello\n")
 
 	// create commit
+	// git commit -m "test"
 	testCommit(t)
 
 	// list branches - main should now show up as it has a commit
+	// git branch
 	testBranchLs(t, "* main\n")
 
 	files = testListFiles(t, config.ObjectPath(), false)
@@ -80,49 +88,71 @@ func Test_End_To_End(t *testing.T) {
 
 	// Test adding a modified file to the index
 	// update a file
+	// echo "hello world" > hello
 	if err := os.WriteFile(filepath.Join(dir, "hello"), []byte("hello world"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	// status should be modified
-	testStatus(t, " M hello\n")
-	// add the file to the index
-	testAdd(t, ".", 1)
 
+	// status should be modified
+	// git status porcelain
+	testStatus(t, " M hello\n")
+
+	// add the file to the index
+	// git add hello
+	testAdd(t, "hello", 1)
+
+	testStatus(t, "M  hello\n")
+
+	// git commit
 	testCommit(t)
 
 	// status should be empty
+	// git status --porcelain
 	testStatus(t, "")
 
 	// create a branch called test
+	// git branch test
 	assert.Nil(t, CreateBranch("test"))
 
 	// check it is now listed
+	// git branch
 	testBranchLs(t, "* main\n  test\n")
 
 	// trying to delete current checkout branch gives error
+	// git branch -d main
 	err := DeleteBranch("main")
 	assert.Equal(t, fmt.Sprintf(DeleteBranchCheckedOutErrFmt, "main", dir), err.Error())
 
 	// delete test branch
+	// git branch -d test
 	assert.Nil(t, DeleteBranch("test"))
 
 	// should be just main left
+	// git branch
 	testBranchLs(t, "* main\n")
 	testLog(t)
 
 	// create a branch called test2
+	// git branch test2
 	assert.Nil(t, CreateBranch("test2"))
 
 	// add a file to main and commit
+	// echo "world" > world
 	if err := os.WriteFile(filepath.Join(dir, "world"), []byte("world"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	// git add world
 	testAdd(t, "world", 2)
+	// git commit
 	testCommit(t)
+	// git status --porcelain
 	testStatus(t, "")
 
 	// test2 branch does not include world, switch to it and check status
+	// git switch test2
 	testSwitchBranch(t, "test2")
+
+	// git status --porcelain
 	testStatus(t, "")
 
 	// switch back to main, should get file back

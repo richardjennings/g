@@ -3,7 +3,7 @@ package index
 import (
 	"errors"
 	"github.com/richardjennings/mygit/internal/mygit/config"
-	"github.com/richardjennings/mygit/internal/mygit/fs"
+	"github.com/richardjennings/mygit/internal/mygit/gfs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -44,11 +44,11 @@ type (
 )
 
 // Files lists the files in the index
-func (idx *Index) Files() []*fs.File {
-	var files []*fs.File
+func (idx *Index) Files() []*gfs.File {
+	var files []*gfs.File
 	for _, v := range idx.items {
-		s, _ := fs.NewSha(v.Sha[:])
-		idx := &fs.File{Path: string(v.Name), Sha: s}
+		s, _ := gfs.NewSha(v.Sha[:])
+		idx := &gfs.File{Path: string(v.Name), Sha: s, Finfo: fromIndexItemP(v.indexItemP)}
 		files = append(files, idx)
 	}
 	return files
@@ -56,9 +56,9 @@ func (idx *Index) Files() []*fs.File {
 
 // Add adds a fs.File to the Index Struct. A call to idx.Write is required
 // to flush the changes to the filesystem.
-func (idx *Index) Add(f *fs.File) error {
+func (idx *Index) Add(f *gfs.File) error {
 	// if delete, remove from Index
-	if f.Status == fs.StatusDeleted {
+	if f.WdStatus == gfs.WDDeletedInWorktree {
 		for i, v := range idx.items {
 			if string(v.Name) == f.Path {
 				idx.items = append(idx.items[0:i], idx.items[i+1:]...)
@@ -67,7 +67,7 @@ func (idx *Index) Add(f *fs.File) error {
 			}
 		}
 		return errors.New("somehow the file was not found in Index items to be removed")
-	} else if f.Status == fs.StatusUntracked {
+	} else if f.WdStatus == gfs.WDUntracked {
 		// just add and sort all of them for now
 		item, err := item(f)
 		if err != nil {
@@ -79,7 +79,7 @@ func (idx *Index) Add(f *fs.File) error {
 		sort.Slice(idx.items, func(i, j int) bool {
 			return string(idx.items[i].Name) < string(idx.items[j].Name)
 		})
-	} else if f.Status == fs.StatusModified {
+	} else if f.WdStatus == gfs.WDWorktreeChangedSinceIndex {
 		for i, v := range idx.items {
 			if string(v.Name) == f.Path {
 				item, err := item(f)
@@ -94,7 +94,7 @@ func (idx *Index) Add(f *fs.File) error {
 	return nil
 }
 
-func item(f *fs.File) (*indexItem, error) {
+func item(f *gfs.File) (*indexItem, error) {
 	if f.Sha == nil {
 		return nil, errors.New("missing Sha from working directory file toIndexItem")
 	}
@@ -112,17 +112,30 @@ func item(f *fs.File) (*indexItem, error) {
 	default:
 		return nil, errors.New("setItemOsSpecificStat not implemented, unsupported OS")
 	}
-	setItemOsSpecificStat(f.Finfo, item)
-	item.Dev = uint32(f.Finfo.Sys().(*syscall.Stat_t).Dev)
-	item.Ino = uint32(f.Finfo.Sys().(*syscall.Stat_t).Ino)
-	if f.Finfo.IsDir() {
-		item.Mode = uint32(040000)
-	} else {
-		item.Mode = uint32(0100644)
+	switch f.Finfo.(type) {
+	case *gfs.Finfo:
+		fi := f.Finfo.(*gfs.Finfo)
+		item.CTimeS = fi.CTimeS
+		item.CTimeN = fi.CTimeN
+		item.MTimeS = fi.MTimeS
+		item.MTimeN = fi.MTimeN
+		item.Dev = fi.Dev
+		item.Ino = fi.Ino
+		item.Mode = fi.MMode
+		item.Uid = fi.Uid
+	default:
+		setItemOsSpecificStat(f.Finfo, item)
+		item.Dev = uint32(f.Finfo.Sys().(*syscall.Stat_t).Dev)
+		item.Ino = uint32(f.Finfo.Sys().(*syscall.Stat_t).Ino)
+		if f.Finfo.IsDir() {
+			item.Mode = uint32(040000)
+		} else {
+			item.Mode = uint32(0100644)
+		}
+		item.Uid = f.Finfo.Sys().(*syscall.Stat_t).Uid
+		item.Gid = f.Finfo.Sys().(*syscall.Stat_t).Gid
+		item.Size = uint32(f.Finfo.Size())
 	}
-	item.Uid = f.Finfo.Sys().(*syscall.Stat_t).Uid
-	item.Gid = f.Finfo.Sys().(*syscall.Stat_t).Gid
-	item.Size = uint32(f.Finfo.Size())
 	item.Sha = f.Sha.AsArray()
 	nameLen := len(f.Path)
 	if nameLen < 0xFFF {
@@ -135,10 +148,27 @@ func item(f *fs.File) (*indexItem, error) {
 	return item, nil
 }
 
-func newIndex() *Index {
+func NewIndex() *Index {
 	return &Index{header: &indexHeader{
 		Sig:        [4]byte{'D', 'I', 'R', 'C'},
 		Version:    2,
 		NumEntries: 0,
 	}}
+}
+
+func fromIndexItemP(p *indexItemP) *gfs.Finfo {
+	f := &gfs.Finfo{
+		CTimeS: p.CTimeS,
+		CTimeN: p.CTimeN,
+		MTimeS: p.MTimeS,
+		MTimeN: p.MTimeN,
+		Dev:    p.Dev,
+		Ino:    p.Ino,
+		MMode:  p.Mode,
+		Uid:    p.Uid,
+		Gid:    p.Gid,
+		SSize:  p.Size,
+		Sha:    p.Sha,
+	}
+	return f
 }
