@@ -4,14 +4,19 @@ import (
 	"bufio"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
 	"io/fs"
 	"os"
 	"path/filepath"
 )
 
-// UpdateHead updates the sha hash pointed to by a branch
-func UpdateHead(branch string, sha []byte) error {
+func UpdateHead(branch string) error {
+	return os.WriteFile(config.GitHeadPath(), []byte(fmt.Sprintf("ref: refs/heads/%s\n", branch)), 0655)
+}
+
+// UpdateBranchHead updates the sha hash pointed to by a branch
+func UpdateBranchHead(branch string, sha []byte) error {
 	path := filepath.Join(config.RefsHeadsDirectory(), branch)
 	return os.WriteFile(path, []byte(hex.EncodeToString(sha)+"\n"), 0755)
 }
@@ -21,9 +26,15 @@ func HeadSHA(currentBranch string) ([]byte, error) {
 	path := filepath.Join(config.RefsHeadsDirectory(), currentBranch)
 	bytes, err := os.ReadFile(path)
 	if err != nil && errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		// the default branch does not exist in refs/heads when there are no commits
+		if fmt.Sprintf("refs/heads/%s", currentBranch) == config.DefaultBranch {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("fatal: not a valid object name: '%s'", currentBranch)
 	} else if err != nil {
 		return nil, err
+	} else if bytes == nil {
+		return nil, fmt.Errorf("fatal: not a valid object name: '%s'", currentBranch)
 	}
 	return bytes[0:40], nil
 }
@@ -91,11 +102,12 @@ func CreateBranch(name string) error {
 	if err != nil {
 		return err
 	}
+
 	sha := make([]byte, 20)
 	if _, err := hex.Decode(sha, head); err != nil {
 		return err
 	}
-	return UpdateHead(name, sha)
+	return UpdateBranchHead(name, sha)
 }
 
 func DeleteBranch(name string) error {

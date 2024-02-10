@@ -51,5 +51,6 @@ func (idx *Index) Write() error {
 	if err := binary.Write(f, binary.BigEndian, &sha); err != nil {
 		return err
 	}
-	return nil
+
+	return f.Close()
 }
