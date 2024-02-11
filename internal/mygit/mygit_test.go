@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func Test_Init(t *testing.T) {
@@ -56,9 +57,7 @@ func Test_End_To_End(t *testing.T) {
 
 	// write a file
 	// echo "hello" > hello
-	if err := os.WriteFile(filepath.Join(dir, "hello"), []byte("hello"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, dir, "hello", []byte("hello"))
 
 	// status should have an object
 	// git status --porcelain
@@ -89,9 +88,7 @@ func Test_End_To_End(t *testing.T) {
 	// Test adding a modified file to the index
 	// update a file
 	// echo "hello world" > hello
-	if err := os.WriteFile(filepath.Join(dir, "hello"), []byte("hello world"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, dir, "hello", []byte("hello world"))
 
 	// status should be modified
 	// git status porcelain
@@ -138,9 +135,8 @@ func Test_End_To_End(t *testing.T) {
 
 	// add a file to main and commit
 	// echo "world" > world
-	if err := os.WriteFile(filepath.Join(dir, "world"), []byte("world"), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeFile(t, dir, "world", []byte("world"))
+
 	// git add world
 	testAdd(t, "world", 2)
 	// git commit
@@ -245,6 +241,16 @@ func testBranchLs(t *testing.T, expected string) {
 
 func testSwitchBranch(t *testing.T, branch string) {
 	if err := SwitchBranch(branch); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeFile(t *testing.T, dir string, path string, content []byte) {
+	if err := os.WriteFile(filepath.Join(dir, path), content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	// racy git https://mirrors.edge.kernel.org/pub/software/scm/git/docs/technical/racy-git.txt
+	if err := os.Chtimes(filepath.Join(dir, path), time.Now(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }
