@@ -33,31 +33,6 @@ const (
 	WDUntracked
 )
 
-const (
-	StatusUndefined FileStatus = iota
-	StatusModified             // different in working directory than Index
-	StatusAdded                // in Index but not in last commit
-	StatusDeleted              // in last commit but not in Index
-
-	StatusUnchanged
-	StatusUntracked // in working directory but not in Index
-
-	StatusNotUpdated
-	StatusUpdatedInIndex
-	StatusTypeChangedInIndex
-	StatusAddedInIndex
-	StatusDeletedInIndex
-	StatusRenamedInIndex
-	StatusCopiedInIndex
-
-	StatusIndexAndWorkingTreeMatch
-	StatusWorktreeChangedSinceIndex
-	StatusTypeChangedInWorktreeSinceIndex
-	StatusDeletedInWorktree
-	StatusRenamedInWorktree
-	StatusCopiedInWorktree
-)
-
 type (
 	File struct {
 		Path      string
@@ -69,7 +44,6 @@ type (
 	Sha struct {
 		hash [20]byte
 	}
-	FileStatus  uint8
 	IndexStatus uint8
 	WDStatus    uint8
 	FileSet     struct {
@@ -181,23 +155,6 @@ func (wds WDStatus) String() string {
 		return "?"
 	default:
 		return ""
-	}
-}
-
-func (ist FileStatus) String() string {
-	switch ist {
-	case StatusModified:
-		return "M"
-	case StatusAdded:
-		return "A"
-	case StatusDeleted:
-		return "D"
-	case StatusUntracked:
-		return "??"
-	case StatusUnchanged:
-		return ""
-	default:
-		return "x"
 	}
 }
 
