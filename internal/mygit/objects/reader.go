@@ -133,7 +133,7 @@ func ReadTree(obj *Object) (*Tree, error) {
 		return nil, err
 	}
 	defer func() { _ = r.Close() }()
-	if err := readHeadBytes(r, obj); err != nil {
+	if err := ReadHeadBytes(r, obj); err != nil {
 		// Tree objects can be totally empty ...
 		if errors.Is(err, io.EOF) {
 			return tree, nil
@@ -175,7 +175,7 @@ func ReadTree(obj *Object) (*Tree, error) {
 	return tree, nil
 }
 
-func readHeadBytes(r io.ReadCloser, obj *Object) error {
+func ReadHeadBytes(r io.ReadCloser, obj *Object) error {
 	n, err := r.Read(make([]byte, obj.HeaderLength))
 	if err != nil {
 		return err
@@ -205,7 +205,7 @@ func readCommit(obj *Object) (*Commit, error) {
 		return nil, err
 	}
 	defer func() { _ = r.Close() }()
-	if err := readHeadBytes(r, obj); err != nil {
+	if err := ReadHeadBytes(r, obj); err != nil {
 		return nil, err
 	}
 	c := &Commit{Sha: obj.Sha}

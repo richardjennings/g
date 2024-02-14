@@ -54,6 +54,16 @@ func (idx *Index) Files() []*gfs.File {
 	return files
 }
 
+func (idx *Index) File(path string) *gfs.File {
+	for _, v := range idx.items {
+		if string(v.Name) == path {
+			s, _ := gfs.NewSha(v.Sha[:])
+			return &gfs.File{Path: string(v.Name), Sha: s, Finfo: fromIndexItemP(v.indexItemP)}
+		}
+	}
+	return nil
+}
+
 // Add adds a fs.File to the Index Struct. A call to idx.Write is required
 // to flush the changes to the filesystem.
 func (idx *Index) Add(f *gfs.File) error {
