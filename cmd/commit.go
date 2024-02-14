@@ -6,23 +6,31 @@ import (
 	"github.com/richardjennings/mygit/internal/mygit"
 	"github.com/spf13/cobra"
 	"log"
+	"os"
 )
+
+var commitMessage string
 
 var commitCmd = &cobra.Command{
 	Use: "commit",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	Run: func(cmd *cobra.Command, args []string) {
 		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		sha, err := mygit.Commit()
+		var msg []byte
+		if cmd.Flags().Changed("message") {
+			msg = []byte(commitMessage)
+		}
+		sha, err := mygit.Commit(msg)
 		if err != nil {
-			return err
+			fmt.Println(err)
+			os.Exit(1)
 		}
 		fmt.Println(hex.EncodeToString(sha))
-		return nil
 	},
 }
 
 func init() {
+	commitCmd.Flags().StringVarP(&commitMessage, "message", "m", "", "--message")
 	rootCmd.AddCommand(commitCmd)
 }

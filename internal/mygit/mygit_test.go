@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/internal/mygit/gfs"
+	"github.com/richardjennings/mygit/internal/mygit/objects"
 	"github.com/richardjennings/mygit/internal/mygit/refs"
 	"github.com/stretchr/testify/assert"
 	"io/fs"
@@ -75,7 +77,7 @@ func Test_End_To_End(t *testing.T) {
 
 	// create commit
 	// git commit -m "test"
-	testCommit(t)
+	testCommit(t, []byte("78"))
 
 	// list branches - main should now show up as it has a commit
 	// git branch
@@ -101,7 +103,7 @@ func Test_End_To_End(t *testing.T) {
 	testStatus(t, "M  hello\n")
 
 	// git commit
-	testCommit(t)
+	testCommit(t, []byte("104"))
 
 	// status should be empty
 	// git status --porcelain
@@ -140,7 +142,7 @@ func Test_End_To_End(t *testing.T) {
 	// git add world
 	testAdd(t, "world", 2)
 	// git commit
-	testCommit(t)
+	testCommit(t, []byte("143"))
 	// git status --porcelain
 	testStatus(t, "")
 
@@ -210,13 +212,33 @@ func testStatus(t *testing.T, expected string) {
 	assert.Equal(t, expected, buf.String())
 }
 
-func testCommit(t *testing.T) []byte {
-	sha, err := Commit()
+func testCommit(t *testing.T, message []byte) []byte {
+	sha, err := Commit(message)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(sha) != 20 {
 		t.Errorf("expected sha len 20 got %d", len(sha))
+	}
+	commitSha, err := gfs.NewSha(sha)
+	if err != nil {
+		t.Error(err)
+		return sha
+	}
+
+	// read object
+	c, err := objects.ReadCommit(commitSha.AsHexBytes())
+	if err != nil {
+		t.Error(err)
+		return sha
+	}
+	if c == nil {
+		t.Error("commit not found")
+		return sha
+	}
+	if string(c.Message) != string(message)+"\n" {
+		t.Errorf("expected commit message %s, got %s", string(message), string(c.Message))
+		return sha
 	}
 	return sha
 }

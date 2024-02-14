@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -138,7 +139,7 @@ func LsFiles() ([]string, error) {
 }
 
 // Commit writes a git commit object from the files in the index
-func Commit() ([]byte, error) {
+func Commit(message []byte) ([]byte, error) {
 	idx, err := index.ReadIndex()
 	if err != nil {
 		return nil, err
@@ -155,17 +156,40 @@ func Commit() ([]byte, error) {
 		// @todo error types to check for e.g no previous commits as source of error
 		return nil, err
 	}
-	return objects.WriteCommit(
-		&objects.Commit{
-			Tree:          tree,
-			Parents:       previousCommits,
-			Author:        "Richard Jennings <richardjennings@gmail.com>",
-			AuthoredTime:  time.Now(),
-			Committer:     "Richard Jennings <richardjennings@gmail.com>",
-			CommittedTime: time.Now(),
-			Message:       []byte("test"),
-		},
-	)
+	commit := &objects.Commit{
+		Tree:          tree,
+		Parents:       previousCommits,
+		Author:        fmt.Sprintf("%s <%s>", config.AuthorName(), config.AuthorEmail()),
+		AuthoredTime:  time.Now(),
+		Committer:     fmt.Sprintf("%s <%s>", config.CommitterName(), config.CommitterEmail()),
+		CommittedTime: time.Now(),
+	}
+	if message != nil {
+		commit.Message = message
+	} else {
+		// empty commit file
+		if err := os.WriteFile(config.EditorFile(), []byte{}, 0600); err != nil {
+			log.Fatalln(err)
+		}
+		ed, args := config.Editor()
+		args = append(args, config.EditorFile())
+		cmd := exec.Command(ed, args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		err = cmd.Run()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		msg, err := os.ReadFile(args[0])
+		if err != nil {
+			log.Fatalln(msg)
+		}
+		commit.Message = msg
+	}
+	if len(commit.Message) == 0 {
+		return nil, errors.New("Aborting commit due to empty commit message.")
+	}
+	return objects.WriteCommit(commit)
 }
 
 // Status currently displays the file statuses comparing the working directory
