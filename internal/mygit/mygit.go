@@ -448,6 +448,9 @@ func Restore(path string) error {
 		return err
 	}
 	_, err = io.Copy(fh, reader)
+	if err != nil {
+		return err
+	}
 	if err := fh.Close(); err != nil {
 		return err
 	}

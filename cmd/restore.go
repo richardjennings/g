@@ -19,7 +19,6 @@ var restoreCmd = &cobra.Command{
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		return
 	},
 }
 
