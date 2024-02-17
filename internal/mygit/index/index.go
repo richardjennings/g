@@ -2,6 +2,7 @@ package index
 
 import (
 	"errors"
+	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit/config"
 	"github.com/richardjennings/mygit/internal/mygit/gfs"
 	"os"
@@ -62,6 +63,19 @@ func (idx *Index) File(path string) *gfs.File {
 		}
 	}
 	return nil
+}
+
+// Rm removes a gfs.File from the Index
+// A call to idx.Write is required to persist the change.
+func (idx *Index) Rm(path string) error {
+	for i, v := range idx.items {
+		if string(v.Name) == path {
+			idx.items = append(idx.items[:i], idx.items[i+1:]...)
+			idx.header.NumEntries--
+			return nil
+		}
+	}
+	return fmt.Errorf("error: pathspec '%s' did not match any file(s) known to git", path)
 }
 
 // Add adds a fs.File to the Index Struct. A call to idx.Write is required

@@ -401,7 +401,7 @@ func SwitchBranch(name string) error {
 
 }
 
-func Restore(path string) error {
+func Restore(path string, staged bool) error {
 	idx, err := index.ReadIndex()
 	if err != nil {
 		return err
@@ -414,6 +414,14 @@ func Restore(path string) error {
 	if err != nil {
 		return err
 	}
+	if staged {
+		// remove file from index
+		if err := idx.Rm(path); err != nil {
+			return err
+		}
+		return idx.Write()
+	}
+
 	fileStatus, ok := currentStatus.Contains(path)
 	// if the path not found or is untracked working directory fileStatus then error
 	if !ok || fileStatus.WdStatus == gfs.WDUntracked {
@@ -454,5 +462,5 @@ func Restore(path string) error {
 	if err := fh.Close(); err != nil {
 		return err
 	}
-	return os.Chtimes(path, file.Finfo.ModTime(), file.Finfo.ModTime())
+	return os.Chtimes(filepath.Join(config.Path(), path), file.Finfo.ModTime(), file.Finfo.ModTime())
 }

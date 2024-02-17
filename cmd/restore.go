@@ -8,6 +8,8 @@ import (
 	"os"
 )
 
+var restoreStaged bool
+
 var restoreCmd = &cobra.Command{
 	Use:  "restore",
 	Args: cobra.ExactArgs(1),
@@ -15,7 +17,7 @@ var restoreCmd = &cobra.Command{
 		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		if err := mygit.Restore(args[0]); err != nil {
+		if err := mygit.Restore(args[0], restoreStaged); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
@@ -23,5 +25,6 @@ var restoreCmd = &cobra.Command{
 }
 
 func init() {
+	restoreCmd.Flags().BoolVar(&restoreStaged, "staged", true, "--staged")
 	rootCmd.AddCommand(restoreCmd)
 }
