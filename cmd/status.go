@@ -1,19 +1,23 @@
 package cmd
 
 import (
+	"fmt"
 	"github.com/richardjennings/mygit/internal/mygit"
 	"github.com/spf13/cobra"
-	"log"
 	"os"
 )
 
 var statusCmd = &cobra.Command{
 	Use: "status",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	Run: func(cmd *cobra.Command, args []string) {
 		if err := configure(); err != nil {
-			log.Fatalln(err)
+			fmt.Println(err)
+			os.Exit(1)
 		}
-		return mygit.Status(os.Stdout)
+		if err := mygit.Status(os.Stdout); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 	},
 }
 

@@ -156,6 +156,23 @@ func Test_End_To_End(t *testing.T) {
 	// switch back to main, should get file back
 	testSwitchBranch(t, "main")
 	testStatus(t, "")
+
+	// test restore staged
+	writeFile(t, dir, "o", []byte("o"))
+	testAdd(t, "o", 3)
+	testStatus(t, "A  o\n")
+	testRestore(t, "o", true)
+	testStatus(t, "?? o\n")
+
+	// test restore
+	testAdd(t, "o", 3)
+	testCommit(t, []byte("oo"))
+	testStatus(t, "")
+	writeFile(t, dir, "o", []byte("ok"))
+	testStatus(t, " M o\n")
+	testRestore(t, "o", false)
+	testStatus(t, "")
+
 }
 
 func testDir(t *testing.T) string {
@@ -210,6 +227,12 @@ func testStatus(t *testing.T, expected string) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, expected, buf.String())
+}
+
+func testRestore(t *testing.T, path string, staged bool) {
+	if err := Restore(path, staged); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func testCommit(t *testing.T, message []byte) []byte {
