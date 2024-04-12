@@ -144,7 +144,7 @@ func Commit(message []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	root := index.ObjectTree(idx.Files())
+	root := objects.ObjectTree(idx.Files())
 	tree, err := root.WriteTree()
 	if err != nil {
 		return nil, err

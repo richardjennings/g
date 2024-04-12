@@ -19,7 +19,7 @@ import (
 func (o *Object) WriteTree() ([]byte, error) {
 	// resolve child tree Objects
 	for i, v := range o.Objects {
-		if v.Typ == ObjectTree {
+		if v.Typ == ObjectTypeTree {
 			// if the tree only has blobs, write them and then
 			// add the corresponding tree returning the Sha
 			sha, err := v.WriteTree()
@@ -38,7 +38,7 @@ func (o *Object) writeTree() ([]byte, error) {
 	var mode string
 	for _, fo := range o.Objects {
 		// @todo add executable support
-		if fo.Typ == ObjectTree {
+		if fo.Typ == ObjectTypeTree {
 			mode = "40000"
 		} else {
 			mode = "100644"
