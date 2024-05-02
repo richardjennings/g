@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit"
+	"github.com/richardjennings/mygit/pkg/mygit/git"
 	"github.com/spf13/cobra"
 	"os"
 )
@@ -14,7 +14,7 @@ var statusCmd = &cobra.Command{
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		if err := mygit.Status(os.Stdout); err != nil {
+		if err := git.Status(os.Stdout); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}

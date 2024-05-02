@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit"
+	"github.com/richardjennings/mygit/pkg/mygit/git"
 	"github.com/spf13/cobra"
 	"log"
 	"os"
@@ -17,7 +17,7 @@ var restoreCmd = &cobra.Command{
 		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		if err := mygit.Restore(args[0], restoreStaged); err != nil {
+		if err := git.Restore(args[0], restoreStaged); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}

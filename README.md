@@ -4,3 +4,9 @@
 
 Playing around writing a toy git
 
+
+## Init
+
+```
+
+```

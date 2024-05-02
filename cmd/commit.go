@@ -3,7 +3,7 @@ package cmd
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit"
+	"github.com/richardjennings/mygit/pkg/mygit/git"
 	"github.com/spf13/cobra"
 	"log"
 	"os"
@@ -21,7 +21,7 @@ var commitCmd = &cobra.Command{
 		if cmd.Flags().Changed("message") {
 			msg = []byte(commitMessage)
 		}
-		sha, err := mygit.Commit(msg)
+		sha, err := git.Commit(msg)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)

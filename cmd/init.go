@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/richardjennings/mygit/pkg/mygit"
+	"github.com/richardjennings/mygit/pkg/mygit/git"
 	"github.com/spf13/cobra"
 	"log"
 )
@@ -12,7 +12,7 @@ var initCmd = &cobra.Command{
 		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		return mygit.Init()
+		return git.Init()
 	},
 }
 
