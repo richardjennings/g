@@ -2,10 +2,10 @@ package git
 
 import (
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit/config"
-	"github.com/richardjennings/mygit/pkg/mygit/gfs"
-	"github.com/richardjennings/mygit/pkg/mygit/index"
-	"github.com/richardjennings/mygit/pkg/mygit/objects"
+	"github.com/richardjennings/mygit/pkg/config"
+	"github.com/richardjennings/mygit/pkg/gfs"
+	"github.com/richardjennings/mygit/pkg/index"
+	"github.com/richardjennings/mygit/pkg/objects"
 	"path/filepath"
 	"strings"
 )

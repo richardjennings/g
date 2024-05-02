@@ -1,6 +1,6 @@
 package git
 
-import "github.com/richardjennings/mygit/pkg/mygit/index"
+import "github.com/richardjennings/mygit/pkg/index"
 
 // LsFiles returns a list of files in the index
 func LsFiles() ([]string, error) {

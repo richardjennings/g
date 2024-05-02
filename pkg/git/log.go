@@ -2,8 +2,8 @@ package git
 
 import (
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit/objects"
-	"github.com/richardjennings/mygit/pkg/mygit/refs"
+	"github.com/richardjennings/mygit/pkg/objects"
+	"github.com/richardjennings/mygit/pkg/refs"
 	"io"
 )
 
@@ -26,4 +26,3 @@ func Log(o io.Writer) error {
 
 	return nil
 }
-

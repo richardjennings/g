@@ -3,11 +3,11 @@ package git
 import (
 	"errors"
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit/config"
-	"github.com/richardjennings/mygit/pkg/mygit/gfs"
-	"github.com/richardjennings/mygit/pkg/mygit/index"
-	"github.com/richardjennings/mygit/pkg/mygit/objects"
-	"github.com/richardjennings/mygit/pkg/mygit/refs"
+	"github.com/richardjennings/mygit/pkg/config"
+	"github.com/richardjennings/mygit/pkg/gfs"
+	"github.com/richardjennings/mygit/pkg/index"
+	"github.com/richardjennings/mygit/pkg/objects"
+	"github.com/richardjennings/mygit/pkg/refs"
 	"io"
 	"os"
 	"path/filepath"
@@ -76,4 +76,3 @@ func Restore(path string, staged bool) error {
 	}
 	return os.Chtimes(filepath.Join(config.Path(), path), file.Finfo.ModTime(), file.Finfo.ModTime())
 }
-

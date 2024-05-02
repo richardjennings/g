@@ -2,8 +2,8 @@ package objects
 
 import (
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit/config"
-	"github.com/richardjennings/mygit/pkg/mygit/gfs"
+	"github.com/richardjennings/mygit/pkg/config"
+	"github.com/richardjennings/mygit/pkg/gfs"
 	"io"
 	"path/filepath"
 	"strings"

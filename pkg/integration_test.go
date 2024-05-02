@@ -1,13 +1,13 @@
-package mygit
+package pkg
 
 import (
 	"bytes"
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit/config"
-	"github.com/richardjennings/mygit/pkg/mygit/gfs"
-	"github.com/richardjennings/mygit/pkg/mygit/git"
-	"github.com/richardjennings/mygit/pkg/mygit/objects"
-	"github.com/richardjennings/mygit/pkg/mygit/refs"
+	"github.com/richardjennings/mygit/pkg/config"
+	"github.com/richardjennings/mygit/pkg/gfs"
+	"github.com/richardjennings/mygit/pkg/git"
+	"github.com/richardjennings/mygit/pkg/objects"
+	"github.com/richardjennings/mygit/pkg/refs"
 	"github.com/stretchr/testify/assert"
 	"io/fs"
 	"os"

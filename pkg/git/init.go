@@ -2,7 +2,7 @@ package git
 
 import (
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit/config"
+	"github.com/richardjennings/mygit/pkg/config"
 	"log"
 	"os"
 )

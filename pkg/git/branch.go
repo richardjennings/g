@@ -2,8 +2,8 @@ package git
 
 import (
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit/config"
-	"github.com/richardjennings/mygit/pkg/mygit/refs"
+	"github.com/richardjennings/mygit/pkg/config"
+	"github.com/richardjennings/mygit/pkg/refs"
 	"io"
 )
 
@@ -48,4 +48,3 @@ func ListBranches(o io.Writer) error {
 	}
 	return nil
 }
-

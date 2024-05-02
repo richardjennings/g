@@ -3,11 +3,11 @@ package git
 import (
 	"errors"
 	"fmt"
-	"github.com/richardjennings/mygit/pkg/mygit/config"
-	"github.com/richardjennings/mygit/pkg/mygit/gfs"
-	"github.com/richardjennings/mygit/pkg/mygit/index"
-	"github.com/richardjennings/mygit/pkg/mygit/objects"
-	"github.com/richardjennings/mygit/pkg/mygit/refs"
+	"github.com/richardjennings/mygit/pkg/config"
+	"github.com/richardjennings/mygit/pkg/gfs"
+	"github.com/richardjennings/mygit/pkg/index"
+	"github.com/richardjennings/mygit/pkg/objects"
+	"github.com/richardjennings/mygit/pkg/refs"
 	"io"
 	"os"
 	"path/filepath"
@@ -145,4 +145,3 @@ func SwitchBranch(name string) error {
 	return nil
 
 }
-
