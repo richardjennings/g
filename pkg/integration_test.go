@@ -1,12 +1,13 @@
-package mygit
+package pkg
 
 import (
 	"bytes"
 	"fmt"
-	"github.com/richardjennings/mygit/internal/mygit/config"
-	"github.com/richardjennings/mygit/internal/mygit/gfs"
-	"github.com/richardjennings/mygit/internal/mygit/objects"
-	"github.com/richardjennings/mygit/internal/mygit/refs"
+	"github.com/richardjennings/mygit/pkg/config"
+	"github.com/richardjennings/mygit/pkg/gfs"
+	"github.com/richardjennings/mygit/pkg/git"
+	"github.com/richardjennings/mygit/pkg/objects"
+	"github.com/richardjennings/mygit/pkg/refs"
 	"github.com/stretchr/testify/assert"
 	"io/fs"
 	"os"
@@ -16,24 +17,11 @@ import (
 	"time"
 )
 
-func Test_Init(t *testing.T) {
-	dir := testDir(t)
-	defer func() { _ = os.RemoveAll(dir) }()
-	testConfigure(t, dir)
-	if err := Init(); err != nil {
-		t.Fatal(err)
-	}
-
-	actual := testListFiles(t, dir, true)
-	expected := []string{".git", ".git/HEAD", ".git/objects", ".git/refs", ".git/refs/heads"}
-	assert.Equal(t, expected, actual)
-}
-
 func Test_DefaultBranch(t *testing.T) {
 	dir := testDir(t)
 	defer func() { _ = os.RemoveAll(dir) }()
 	testConfigure(t, dir)
-	if err := Init(); err != nil {
+	if err := git.Init(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -49,7 +37,7 @@ func Test_End_To_End(t *testing.T) {
 	testConfigure(t, dir)
 
 	// git init
-	if err := Init(); err != nil {
+	if err := git.Init(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -111,7 +99,7 @@ func Test_End_To_End(t *testing.T) {
 
 	// create a branch called test
 	// git branch test
-	assert.Nil(t, CreateBranch("test"))
+	assert.Nil(t, git.CreateBranch("test"))
 
 	// check it is now listed
 	// git branch
@@ -119,12 +107,12 @@ func Test_End_To_End(t *testing.T) {
 
 	// trying to delete current checkout branch gives error
 	// git branch -d main
-	err := DeleteBranch("main")
-	assert.Equal(t, fmt.Sprintf(DeleteBranchCheckedOutErrFmt, "main", dir), err.Error())
+	err := git.DeleteBranch("main")
+	assert.Equal(t, fmt.Sprintf(git.DeleteBranchCheckedOutErrFmt, "main", dir), err.Error())
 
 	// delete test branch
 	// git branch -d test
-	assert.Nil(t, DeleteBranch("test"))
+	assert.Nil(t, git.DeleteBranch("test"))
 
 	// should be just main left
 	// git branch
@@ -133,7 +121,7 @@ func Test_End_To_End(t *testing.T) {
 
 	// create a branch called test2
 	// git branch test2
-	assert.Nil(t, CreateBranch("test2"))
+	assert.Nil(t, git.CreateBranch("test2"))
 
 	// add a file to main and commit
 	// echo "world" > world
@@ -211,10 +199,10 @@ func testListFiles(t *testing.T, path string, dirs bool) []string {
 }
 
 func testAdd(t *testing.T, path string, numIdxFiles int) {
-	if err := Add(path); err != nil {
+	if err := git.Add(path); err != nil {
 		t.Fatal(err)
 	}
-	files, err := LsFiles()
+	files, err := git.LsFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,20 +211,20 @@ func testAdd(t *testing.T, path string, numIdxFiles int) {
 
 func testStatus(t *testing.T, expected string) {
 	buf := bytes.NewBuffer(nil)
-	if err := Status(buf); err != nil {
+	if err := git.Status(buf); err != nil {
 		t.Fatal(err)
 	}
 	assert.Equal(t, expected, buf.String())
 }
 
 func testRestore(t *testing.T, path string, staged bool) {
-	if err := Restore(path, staged); err != nil {
+	if err := git.Restore(path, staged); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func testCommit(t *testing.T, message []byte) []byte {
-	sha, err := Commit(message)
+	sha, err := git.Commit(message)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +256,7 @@ func testCommit(t *testing.T, message []byte) []byte {
 
 func testLog(t *testing.T) []byte {
 	buf := bytes.NewBuffer(nil)
-	err := Log(buf)
+	err := git.Log(buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +265,7 @@ func testLog(t *testing.T) []byte {
 
 func testBranchLs(t *testing.T, expected string) {
 	buf := bytes.NewBuffer(nil)
-	err := ListBranches(buf)
+	err := git.ListBranches(buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +273,7 @@ func testBranchLs(t *testing.T, expected string) {
 }
 
 func testSwitchBranch(t *testing.T, branch string) {
-	if err := SwitchBranch(branch); err != nil {
+	if err := git.SwitchBranch(branch); err != nil {
 		t.Fatal(err)
 	}
 }

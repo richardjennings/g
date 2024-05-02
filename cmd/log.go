@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/richardjennings/mygit/internal/mygit"
-	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/pkg/config"
+	"github.com/richardjennings/mygit/pkg/git"
 	"github.com/spf13/cobra"
 	"log"
 	"os"
@@ -23,7 +23,7 @@ var logCmd = &cobra.Command{
 			return err
 		}
 		c.Stdout = os.Stdout
-		err = mygit.Log(w)
+		err = git.Log(w)
 		if err != nil {
 			return err
 		}

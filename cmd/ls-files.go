@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/richardjennings/mygit/internal/mygit"
+	"github.com/richardjennings/mygit/pkg/git"
 	"github.com/spf13/cobra"
 	"log"
 )
@@ -13,7 +13,7 @@ var lsFilesCmd = &cobra.Command{
 		if err := configure(); err != nil {
 			log.Fatalln(err)
 		}
-		files, err := mygit.LsFiles()
+		files, err := git.LsFiles()
 		if err != nil {
 			return err
 		}

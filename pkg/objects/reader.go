@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/richardjennings/mygit/internal/mygit/config"
-	"github.com/richardjennings/mygit/internal/mygit/gfs"
+	"github.com/richardjennings/mygit/pkg/config"
+	"github.com/richardjennings/mygit/pkg/gfs"
 	"io"
 	"os"
 	"path/filepath"
@@ -19,7 +19,7 @@ import (
 // FlattenTree turns a TreeObject structure into a flat list of file paths
 func (o *Object) FlattenTree() []*gfs.File {
 	var objFiles []*gfs.File
-	if o.Typ == ObjectBlob {
+	if o.Typ == ObjectTypeBlob {
 		s, _ := gfs.NewSha(o.Sha)
 		f := []*gfs.File{{Path: o.Path, Sha: s}}
 		return f
@@ -54,11 +54,11 @@ func ReadObject(sha []byte) (*Object, error) {
 
 	switch string(header[0]) {
 	case "commit":
-		o.Typ = ObjectCommit
+		o.Typ = ObjectTypeCommit
 	case "tree":
-		o.Typ = ObjectTree
+		o.Typ = ObjectTypeTree
 	case "blob":
-		o.Typ = ObjectBlob
+		o.Typ = ObjectTypeBlob
 	default:
 		return nil, fmt.Errorf("unknown %s", string(header[0]))
 	}
@@ -85,7 +85,7 @@ func ReadObjectTree(sha []byte) (*Object, error) {
 		return nil, err
 	}
 	switch obj.Typ {
-	case ObjectCommit:
+	case ObjectTypeCommit:
 		commit, err := readCommit(obj)
 		if err != nil {
 			return obj, err
@@ -96,7 +96,7 @@ func ReadObjectTree(sha []byte) (*Object, error) {
 		}
 		obj.Objects = append(obj.Objects, co)
 		return obj, nil
-	case ObjectTree:
+	case ObjectTypeTree:
 		tree, err := ReadTree(obj)
 		if err != nil {
 			return nil, err
@@ -113,7 +113,7 @@ func ReadObjectTree(sha []byte) (*Object, error) {
 			obj.Objects = append(obj.Objects, o)
 		}
 		return obj, nil
-	case ObjectBlob:
+	case ObjectTypeBlob:
 		// lets not read the whole blob
 		return obj, nil
 	}
@@ -158,12 +158,12 @@ func ReadTree(obj *Object) (*Tree, error) {
 		item := bytes.Fields(p)
 		itm.Sha = []byte(hex.EncodeToString(sha))
 		if string(item[0]) == "40000" {
-			itm.Typ = ObjectTree
+			itm.Typ = ObjectTypeTree
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			itm.Typ = ObjectBlob
+			itm.Typ = ObjectTypeBlob
 		}
 		itm.Path = string(item[1][:len(item[1])-1])
 

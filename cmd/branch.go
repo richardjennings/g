@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/richardjennings/mygit/internal/mygit"
+	"github.com/richardjennings/mygit/pkg/git"
 	"github.com/spf13/cobra"
 	"log"
 	"os"
@@ -18,14 +18,14 @@ var branchCmd = &cobra.Command{
 		}
 		if len(args) == 0 {
 			// default to list branches
-			return mygit.ListBranches(os.Stdout)
+			return git.ListBranches(os.Stdout)
 		}
 		if len(args) == 1 {
 			if branchDelete {
-				return mygit.DeleteBranch(args[0])
+				return git.DeleteBranch(args[0])
 			} else {
 				// create a branch
-				return mygit.CreateBranch(args[0])
+				return git.CreateBranch(args[0])
 			}
 		}
 		return nil
