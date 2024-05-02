@@ -1,7 +1,7 @@
 package ignore
 
 import (
-	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/pkg/mygit/config"
 	"path/filepath"
 	"strings"
 )

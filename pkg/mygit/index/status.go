@@ -1,9 +1,9 @@
 package index
 
 import (
-	"github.com/richardjennings/mygit/internal/mygit/config"
-	"github.com/richardjennings/mygit/internal/mygit/gfs"
-	"github.com/richardjennings/mygit/internal/mygit/objects"
+	"github.com/richardjennings/mygit/pkg/mygit/config"
+	"github.com/richardjennings/mygit/pkg/mygit/gfs"
+	"github.com/richardjennings/mygit/pkg/mygit/objects"
 )
 
 // Status returns a FileSet containing all files from commit, index and working directory

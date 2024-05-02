@@ -3,7 +3,7 @@ package index
 import (
 	"encoding/binary"
 	"errors"
-	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/pkg/mygit/config"
 	"os"
 )
 

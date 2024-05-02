@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/pkg/mygit/config"
 	"io/fs"
 	"os"
 	"path/filepath"

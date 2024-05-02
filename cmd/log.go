@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/richardjennings/mygit/internal/mygit"
-	"github.com/richardjennings/mygit/internal/mygit/config"
+	"github.com/richardjennings/mygit/pkg/mygit"
+	"github.com/richardjennings/mygit/pkg/mygit/config"
 	"github.com/spf13/cobra"
 	"log"
 	"os"
