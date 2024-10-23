@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
 func UpdateHead(branch string) error {
@@ -78,8 +80,37 @@ func PreviousCommits() ([][]byte, error) {
 	return nil, nil
 }
 
+// ListBranches lists Git branches from refs/heads and info/refs
+// It does not currently allow listing remote tracking branches
 func ListBranches() ([]string, error) {
 	var branches []string
+	branchMap := make(map[string]struct{})
+
+	// check for packed refs
+	fh, err := os.Open(config.PackedRefsFile())
+	defer func() {
+		if fh != nil {
+			_ = fh.Close()
+		}
+	}()
+	if err == nil {
+		// we have a packed refs file to parse into a list of branches
+		scanner := bufio.NewScanner(fh)
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			// hash := line[0:40]
+			path := string(line[41:])
+			// path can have multiple prefixes
+			// refs/heads/
+			// refs (for stash)
+			// refs/remotes/.../
+			// for now just use refs/heads/
+			if path, ok := strings.CutPrefix(path, config.RefsHeadPrefix()); ok {
+				branchMap[path] = struct{}{}
+			}
+		}
+	}
+
 	f, err := os.ReadDir(config.RefsHeadsDirectory())
 	if err != nil {
 		return branches, err
@@ -88,8 +119,13 @@ func ListBranches() ([]string, error) {
 		if v.IsDir() {
 			continue
 		}
-		branches = append(branches, v.Name())
+		branchMap[v.Name()] = struct{}{}
 	}
+	// return branches sorted alphabetically
+	for k := range branchMap {
+		branches = append(branches, k)
+	}
+	sort.Sort(sort.StringSlice(branches))
 	return branches, nil
 }
 

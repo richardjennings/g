@@ -16,19 +16,26 @@ const (
 	DefaultRefsHeadsDirectory = "heads"
 	DefaultBranch             = "refs/heads/main"
 	DefaultEditor             = "vim"
+	DefaultPackedRefsFile     = "info/refs"
 )
 
 var Config Cnf
 
 type (
 	Cnf struct {
-		GitDirectory       string
-		Path               string
+		// GitDirector configures where the name of the git directory
+		// This is usually .git
+		GitDirectory string
+		// Path configures where the Git Directory to interact with is
+		// relative to the present working directory. This is usually .
+		Path string
+
 		HeadFile           string
 		IndexFile          string
 		ObjectsDirectory   string
 		RefsDirectory      string
 		RefsHeadsDirectory string
+		PackedRefsFile     string
 		DefaultBranch      string
 		GitIgnore          []string
 		Editor             string
@@ -64,6 +71,7 @@ func Configure(opts ...Opt) error {
 		ObjectsDirectory:   DefaultObjectsDirectory,
 		RefsDirectory:      DefaultRefsDirectory,
 		RefsHeadsDirectory: DefaultRefsHeadsDirectory,
+		PackedRefsFile:     DefaultPackedRefsFile,
 		DefaultBranch:      DefaultBranch,
 		Editor:             DefaultEditor,
 		GitIgnore: []string{ //@todo read from .gitignore
@@ -110,8 +118,16 @@ func RefsDirectory() string {
 	return filepath.Join(Config.Path, Config.GitDirectory, Config.RefsDirectory)
 }
 
+func RefsHeadPrefix() string {
+	return filepath.Join(Config.RefsDirectory, Config.RefsHeadsDirectory) + string(os.PathSeparator)
+}
+
 func RefsHeadsDirectory() string {
 	return filepath.Join(Config.Path, Config.GitDirectory, Config.RefsDirectory, Config.RefsHeadsDirectory)
+}
+
+func PackedRefsFile() string {
+	return filepath.Join(Config.Path, Config.GitDirectory, Config.PackedRefsFile)
 }
 
 func GitHeadPath() string {

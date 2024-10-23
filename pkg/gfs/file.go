@@ -97,6 +97,7 @@ func (s *Sha) Same(ss *Sha) bool {
 func (s Sha) AsHexString() string {
 	return hex.EncodeToString(s.hash[:])
 }
+
 func (s Sha) AsHexBytes() []byte {
 	b := make([]byte, 40)
 	hex.Encode(b, s.hash[:])
