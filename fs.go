@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,7 +37,7 @@ type (
 		Path      string
 		IdxStatus IndexStatus
 		WdStatus  WDStatus
-		Sha       *Sha
+		Sha       Sha
 		Finfo     os.FileInfo
 	}
 	Sha struct {
@@ -68,28 +69,19 @@ type (
 	}
 )
 
-func NewSha(b []byte) (*Sha, error) {
+// NewSha creates a Sha from either a binary or hex encoded byte slice
+func NewSha(b []byte) (Sha, error) {
 	if len(b) == 40 {
-		s := &Sha{}
+		s := Sha{}
 		_, _ = hex.Decode(s.hash[:], b)
 		return s, nil
 	}
 	if len(b) == 20 {
-		s := &Sha{}
+		s := Sha{}
 		copy(s.hash[:], b)
 		return s, nil
 	}
-	return nil, fmt.Errorf("invalid sha %s", b)
-}
-
-func (s *Sha) Same(ss *Sha) bool {
-	if ss == nil {
-		return false
-	}
-	if s == nil {
-		return false
-	}
-	return s.hash == ss.hash
+	return Sha{}, fmt.Errorf("invalid sha %s", b)
 }
 
 func (s Sha) AsHexString() string {
@@ -108,8 +100,8 @@ func (s Sha) AsArray() [20]byte {
 	return r
 }
 
-// @todo this is more AsSlice ...
-func (s Sha) AsBytes() []byte {
+// AsByteSlice returns a Sha as a byte slice
+func (s Sha) AsByteSlice() []byte {
 	return s.hash[:]
 }
 
@@ -217,7 +209,7 @@ func (fs *FileSet) MergeFromIndex(fss *FileSet) {
 			continue
 		}
 		fs.idx[v.Path].Finfo = v.Finfo
-		if !bytes.Equal(v.Sha.AsBytes(), fs.idx[v.Path].Sha.AsBytes()) {
+		if !bytes.Equal(v.Sha.AsByteSlice(), fs.idx[v.Path].Sha.AsByteSlice()) {
 			fs.idx[v.Path].IdxStatus = IndexUpdatedInIndex
 			continue
 		}
@@ -300,4 +292,23 @@ func (fi *Finfo) IsDir() bool       { return false }
 func (fi *Finfo) Sys() any          { return nil }
 func (fi *Finfo) ModTime() time.Time {
 	return time.Unix(int64(fi.MTimeS), int64(fi.MTimeN))
+}
+
+// Init initializes a git repository
+func Init() error {
+	path := GitPath()
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return err
+	}
+	for _, v := range []string{
+		ObjectPath(),
+		RefsDirectory(),
+		RefsHeadsDirectory(),
+	} {
+		if err := os.MkdirAll(v, 0755); err != nil {
+			log.Fatalln(err)
+		}
+	}
+	// set default main branch
+	return os.WriteFile(GitHeadPath(), []byte(fmt.Sprintf("ref: %s\n", filepath.Join(RefsHeadPrefix(), DefaultBranch()))), 0644)
 }

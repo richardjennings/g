@@ -28,7 +28,7 @@ func HeadSHA(currentBranch string) ([]byte, error) {
 	bytes, err := os.ReadFile(path)
 	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		// the default branch does not exist in refs/heads when there are no commits
-		if fmt.Sprintf("refs/heads/%s", currentBranch) == DefaultBranch {
+		if currentBranch == DefaultBranchName {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("fatal: not a valid object name: '%s'", currentBranch)
@@ -124,7 +124,7 @@ func ListBranches() ([]string, error) {
 	for k := range branchMap {
 		branches = append(branches, k)
 	}
-	sort.Sort(sort.StringSlice(branches))
+	sort.Strings(branches)
 	return branches, nil
 }
 

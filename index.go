@@ -166,9 +166,6 @@ func (idx *Index) Write() error {
 }
 
 func item(f *File) (*indexItem, error) {
-	if f.Sha == nil {
-		return nil, errors.New("missing Sha from working directory file toIndexItem")
-	}
 	if f.Finfo == nil {
 		info, err := os.Stat(filepath.Join(Path(), f.Path))
 		if err != nil {
@@ -244,8 +241,6 @@ func fromIndexItemP(p *indexItemP) *Finfo {
 	return f
 }
 
-
-
 // Status returns a FileSet containing all files from commit, index and working directory
 // with the corresponding status.
 func Status(idx *Index, commitSha []byte) (*FileSet, error) {
@@ -283,7 +278,6 @@ func FsStatus(path string) (*FileSet, error) {
 	idxSet.MergeFromWD(NewFileSet(files))
 	return idxSet, nil
 }
-
 
 // ReadIndex reads the Git Index into an Index struct
 func ReadIndex() (*Index, error) {

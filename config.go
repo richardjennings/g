@@ -14,12 +14,12 @@ const (
 	DefaultObjectsDirectory   = "objects"
 	DefaultRefsDirectory      = "refs"
 	DefaultRefsHeadsDirectory = "heads"
-	DefaultBranch             = "refs/heads/main"
+	DefaultBranchName         = "main"
 	DefaultEditor             = "vim"
 	DefaultPackedRefsFile     = "info/refs"
 )
 
-var Config Cnf
+var config Cnf
 
 type (
 	Cnf struct {
@@ -72,7 +72,7 @@ func Configure(opts ...Opt) error {
 		RefsDirectory:      DefaultRefsDirectory,
 		RefsHeadsDirectory: DefaultRefsHeadsDirectory,
 		PackedRefsFile:     DefaultPackedRefsFile,
-		DefaultBranch:      DefaultBranch,
+		DefaultBranch:      DefaultBranchName,
 		Editor:             DefaultEditor,
 		GitIgnore: []string{ //@todo read from .gitignore
 			".idea/",
@@ -90,48 +90,48 @@ func Configure(opts ...Opt) error {
 		}
 		c.Path = p
 	}
-	Config = *c
+	config = *c
 	return nil
 }
 
 func Path() string {
-	return Config.Path
+	return config.Path
 }
 
 func GitPath() string {
-	return filepath.Join(Config.Path, Config.GitDirectory)
+	return filepath.Join(config.Path, config.GitDirectory)
 }
 
 func ObjectPath() string {
-	return filepath.Join(Config.Path, Config.GitDirectory, Config.ObjectsDirectory)
+	return filepath.Join(config.Path, config.GitDirectory, config.ObjectsDirectory)
 }
 
 func WorkingDirectory() string {
-	return Config.Path + string(filepath.Separator)
+	return config.Path + string(filepath.Separator)
 }
 
 func IndexFilePath() string {
-	return filepath.Join(Config.Path, Config.GitDirectory, Config.IndexFile)
+	return filepath.Join(config.Path, config.GitDirectory, config.IndexFile)
 }
 
 func RefsDirectory() string {
-	return filepath.Join(Config.Path, Config.GitDirectory, Config.RefsDirectory)
+	return filepath.Join(config.Path, config.GitDirectory, config.RefsDirectory)
 }
 
 func RefsHeadPrefix() string {
-	return filepath.Join(Config.RefsDirectory, Config.RefsHeadsDirectory) + string(os.PathSeparator)
+	return filepath.Join(config.RefsDirectory, config.RefsHeadsDirectory) + string(os.PathSeparator)
 }
 
 func RefsHeadsDirectory() string {
-	return filepath.Join(Config.Path, Config.GitDirectory, Config.RefsDirectory, Config.RefsHeadsDirectory)
+	return filepath.Join(config.Path, config.GitDirectory, config.RefsDirectory, config.RefsHeadsDirectory)
 }
 
 func PackedRefsFile() string {
-	return filepath.Join(Config.Path, Config.GitDirectory, Config.PackedRefsFile)
+	return filepath.Join(config.Path, config.GitDirectory, config.PackedRefsFile)
 }
 
 func GitHeadPath() string {
-	return filepath.Join(Config.Path, Config.GitDirectory, Config.HeadFile)
+	return filepath.Join(config.Path, config.GitDirectory, config.HeadFile)
 }
 
 func Pager() (string, []string) {
@@ -139,7 +139,7 @@ func Pager() (string, []string) {
 }
 
 func Editor() (string, []string) {
-	return Config.Editor, Config.EditorArgs
+	return config.Editor, config.EditorArgs
 }
 
 func EditorFile() string {
@@ -172,4 +172,8 @@ func CommitterEmail() string {
 		return v
 	}
 	return AuthorEmail()
+}
+
+func DefaultBranch() string {
+	return config.DefaultBranch
 }

@@ -86,13 +86,13 @@ func ObjectTree(files []*File) *Object {
 	for _, v := range files {
 		parts := strings.Split(strings.TrimPrefix(v.Path, WorkingDirectory()), string(filepath.Separator))
 		if len(parts) == 1 {
-			root.Objects = append(root.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha.AsBytes()})
+			root.Objects = append(root.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha.AsByteSlice()})
 			continue // top level file
 		}
 		pn = root
 		for i, p := range parts {
 			if i == len(parts)-1 {
-				pn.Objects = append(pn.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha.AsBytes()})
+				pn.Objects = append(pn.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha.AsByteSlice()})
 				continue // leaf
 			}
 			// key for cached nodes
@@ -111,7 +111,6 @@ func ObjectTree(files []*File) *Object {
 
 	return root
 }
-
 
 // FlattenTree turns a TreeObject structure into a flat list of file paths
 func (o *Object) FlattenTree() []*File {
@@ -416,7 +415,6 @@ func CommittedFiles(sha []byte) ([]*File, error) {
 	}
 	return obj.FlattenTree(), nil
 }
-
 
 // WriteTree writes an Object Tree to the object store.
 func (o *Object) WriteTree() ([]byte, error) {

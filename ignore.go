@@ -13,10 +13,10 @@ func IsIgnored(path string) bool {
 		return true
 	}
 	// @todo fix literal string prefix matching and iteration
-	for _, v := range Config.GitIgnore {
+	for _, v := range config.GitIgnore {
 		if strings.HasPrefix(path, v) {
 			return true
 		}
 	}
-	return strings.HasPrefix(path, Config.GitDirectory+string(filepath.Separator))
+	return strings.HasPrefix(path, config.GitDirectory+string(filepath.Separator))
 }
