@@ -41,6 +41,7 @@ type (
 		Finfo     os.FileInfo
 	}
 	Sha struct {
+		set  bool
 		hash [20]byte
 	}
 	IndexStatus uint8
@@ -72,16 +73,24 @@ type (
 // NewSha creates a Sha from either a binary or hex encoded byte slice
 func NewSha(b []byte) (Sha, error) {
 	if len(b) == 40 {
-		s := Sha{}
+		s := Sha{set: true}
 		_, _ = hex.Decode(s.hash[:], b)
 		return s, nil
 	}
 	if len(b) == 20 {
-		s := Sha{}
+		s := Sha{set: true}
 		copy(s.hash[:], b)
 		return s, nil
 	}
 	return Sha{}, fmt.Errorf("invalid sha %s", b)
+}
+
+func (s Sha) String() string {
+	return s.AsHexString()
+}
+
+func (s Sha) IsSet() bool {
+	return s.set
 }
 
 func (s Sha) AsHexString() string {

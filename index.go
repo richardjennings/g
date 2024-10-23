@@ -243,10 +243,10 @@ func fromIndexItemP(p *indexItemP) *Finfo {
 
 // Status returns a FileSet containing all files from commit, index and working directory
 // with the corresponding status.
-func Status(idx *Index, commitSha []byte) (*FileSet, error) {
+func Status(idx *Index, commitSha Sha) (*FileSet, error) {
 	var commitFiles []*File
 	var err error
-	if commitSha != nil {
+	if commitSha.IsSet() {
 		commitFiles, err = CommittedFiles(commitSha)
 		if err != nil {
 			return nil, err

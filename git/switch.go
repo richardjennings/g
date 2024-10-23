@@ -23,7 +23,7 @@ func SwitchBranch(name string) error {
 		return err
 	}
 
-	if commitSha == nil {
+	if !commitSha.IsSet() {
 		return fmt.Errorf("fatal: invalid reference: %s", name)
 	}
 
@@ -97,7 +97,7 @@ func SwitchBranch(name string) error {
 	idx = g.NewIndex()
 
 	for _, v := range commitFiles {
-		obj, err := g.ReadObject(v.Sha.AsHexBytes())
+		obj, err := g.ReadObject(v.Sha)
 		if err != nil {
 			return err
 		}

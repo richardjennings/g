@@ -32,7 +32,7 @@ type (
 	Commit     struct {
 		Sha            []byte
 		Tree           []byte
-		Parents        [][]byte
+		Parents        []Sha
 		Author         string
 		AuthorEmail    string
 		AuthoredTime   time.Time
@@ -67,7 +67,7 @@ func (c Commit) String() string {
 	o += fmt.Sprintf("commit: %s\n", string(c.Sha))
 	o += fmt.Sprintf("tree: %s\n", string(c.Tree))
 	for _, v := range c.Parents {
-		o += fmt.Sprintf("parent: %s\n", string(v))
+		o += fmt.Sprintf("parent: %s\n", v.AsHexString())
 	}
 	o += fmt.Sprintf("%s <%s> %s\n", c.Author, c.AuthorEmail, c.AuthoredTime.String())
 	o += fmt.Sprintf("%s <%s> %s\n", c.Committer, c.CommitterEmail, c.CommittedTime.String())
@@ -131,10 +131,10 @@ func (o *Object) FlattenTree() []*File {
 	return objFiles
 }
 
-func ReadObject(sha []byte) (*Object, error) {
+func ReadObject(sha Sha) (*Object, error) {
 	var err error
-	o := &Object{Sha: sha}
-	o.ReadCloser = ObjectReadCloser(sha)
+	o := &Object{Sha: sha.AsHexBytes()}
+	o.ReadCloser = ObjectReadCloser(sha.AsHexBytes())
 	z, err := o.ReadCloser()
 	if err != nil {
 		return o, err
@@ -175,7 +175,7 @@ func ObjectReadCloser(sha []byte) func() (io.ReadCloser, error) {
 }
 
 // ReadObjectTree reads an object from the object store
-func ReadObjectTree(sha []byte) (*Object, error) {
+func ReadObjectTree(sha Sha) (*Object, error) {
 	obj, err := ReadObject(sha)
 	if err != nil {
 		return nil, err
@@ -186,7 +186,11 @@ func ReadObjectTree(sha []byte) (*Object, error) {
 		if err != nil {
 			return obj, err
 		}
-		co, err := ReadObjectTree(commit.Tree)
+		sha, err := NewSha(commit.Tree)
+		if err != nil {
+			return obj, err
+		}
+		co, err := ReadObjectTree(sha)
 		if err != nil {
 			return nil, err
 		}
@@ -198,7 +202,11 @@ func ReadObjectTree(sha []byte) (*Object, error) {
 			return nil, err
 		}
 		for _, v := range tree.Items {
-			o, err := ReadObjectTree(v.Sha)
+			sha, err := NewSha(v.Sha)
+			if err != nil {
+				return obj, err
+			}
+			o, err := ReadObjectTree(sha)
 			if err != nil {
 				return nil, err
 			}
@@ -283,7 +291,7 @@ func ReadHeadBytes(r io.ReadCloser, obj *Object) error {
 	return nil
 }
 
-func ReadCommit(sha []byte) (*Commit, error) {
+func ReadCommit(sha Sha) (*Commit, error) {
 	o, err := ReadObject(sha)
 	if err != nil {
 		return nil, err
@@ -326,7 +334,11 @@ func readCommit(obj *Object) (*Commit, error) {
 		}
 		// can be parent
 		if t == "parent" {
-			c.Parents = append(c.Parents, p[1])
+			sha, err := NewSha(p[1])
+			if err != nil {
+				return nil, err
+			}
+			c.Parents = append(c.Parents, sha)
 			continue
 		}
 		if c.Author == "" {
@@ -408,7 +420,7 @@ func readCommitter(b []byte, c *Commit) error {
 	return nil
 }
 
-func CommittedFiles(sha []byte) ([]*File, error) {
+func CommittedFiles(sha Sha) ([]*File, error) {
 	obj, err := ReadObjectTree(sha)
 	if err != nil {
 		return nil, err
@@ -529,7 +541,7 @@ func WriteCommit(c *Commit) ([]byte, error) {
 		c.Message,
 	))
 	header := []byte(fmt.Sprintf("commit %d%s", len(content), string(byte(0))))
-	sha, err := WriteObject(header, content, "", ObjectPath())
+	b, err := WriteObject(header, content, "", ObjectPath())
 	if err != nil {
 		return nil, err
 	}
@@ -537,5 +549,9 @@ func WriteCommit(c *Commit) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sha, UpdateBranchHead(branch, sha)
+	sha, err := NewSha(b)
+	if err != nil {
+		return nil, err
+	}
+	return sha.AsHexBytes(), UpdateBranchHead(branch, sha)
 }
