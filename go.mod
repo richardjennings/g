@@ -1,4 +1,4 @@
-module github.com/richardjennings/mygit
+module github.com/richardjennings/g
 
 go 1.20
 
