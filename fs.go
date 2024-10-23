@@ -85,6 +85,14 @@ func NewSha(b []byte) (Sha, error) {
 	return Sha{}, fmt.Errorf("invalid sha %s", b)
 }
 
+func ShaFromHexString(s string) (Sha, error) {
+	v, err := hex.DecodeString(s)
+	if err != nil {
+		return Sha{}, err
+	}
+	return NewSha(v)
+}
+
 func (s Sha) String() string {
 	return s.AsHexString()
 }

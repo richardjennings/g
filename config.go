@@ -17,6 +17,7 @@ const (
 	DefaultBranchName         = "main"
 	DefaultEditor             = "vim"
 	DefaultPackedRefsFile     = "info/refs"
+	DefaultPackfileDirectory  = "pack"
 )
 
 var config Cnf
@@ -36,6 +37,7 @@ type (
 		RefsDirectory      string
 		RefsHeadsDirectory string
 		PackedRefsFile     string
+		PackfileDirectory  string
 		DefaultBranch      string
 		GitIgnore          []string
 		Editor             string
@@ -72,6 +74,7 @@ func Configure(opts ...Opt) error {
 		RefsDirectory:      DefaultRefsDirectory,
 		RefsHeadsDirectory: DefaultRefsHeadsDirectory,
 		PackedRefsFile:     DefaultPackedRefsFile,
+		PackfileDirectory:  DefaultPackfileDirectory,
 		DefaultBranch:      DefaultBranchName,
 		Editor:             DefaultEditor,
 		GitIgnore: []string{ //@todo read from .gitignore
@@ -128,6 +131,10 @@ func RefsHeadsDirectory() string {
 
 func PackedRefsFile() string {
 	return filepath.Join(config.Path, config.GitDirectory, config.PackedRefsFile)
+}
+
+func ObjectPackfileDirectory() string {
+	return filepath.Join(config.Path, config.GitDirectory, config.ObjectsDirectory, config.PackfileDirectory)
 }
 
 func GitHeadPath() string {
