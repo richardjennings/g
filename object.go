@@ -21,7 +21,7 @@ type (
 	Object struct {
 		Path         string
 		Typ          objectType
-		Sha          []byte
+		Sha          Sha
 		Objects      []*Object
 		Length       int
 		HeaderLength int
@@ -30,8 +30,8 @@ type (
 	}
 	objectType int
 	Commit     struct {
-		Sha            []byte
-		Tree           []byte
+		Sha            Sha
+		Tree           Sha
 		Parents        []Sha
 		Author         string
 		AuthorEmail    string
@@ -43,7 +43,7 @@ type (
 		Message        []byte
 	}
 	Tree struct {
-		Sha   []byte
+		Sha   Sha
 		Typ   objectType
 		Path  string
 		Items []*TreeItem
@@ -64,8 +64,8 @@ const (
 
 func (c Commit) String() string {
 	var o string
-	o += fmt.Sprintf("commit: %s\n", string(c.Sha))
-	o += fmt.Sprintf("tree: %s\n", string(c.Tree))
+	o += fmt.Sprintf("commit: %s\n", c.Sha.AsHexString())
+	o += fmt.Sprintf("tree: %s\n", c.Tree.AsHexString())
 	for _, v := range c.Parents {
 		o += fmt.Sprintf("parent: %s\n", v.AsHexString())
 	}
@@ -78,7 +78,9 @@ func (c Commit) String() string {
 // ObjectTree creates a Tree Object with child Objects representing the files and
 // paths in the provided files.
 func ObjectTree(files []*File) *Object {
-	root := &Object{}
+	root := &Object{
+		Typ: ObjectTypeTree,
+	}
 	var n *Object  // current node
 	var pn *Object // previous node
 	// mp holds a cache of file paths to objectTree nodes
@@ -86,13 +88,13 @@ func ObjectTree(files []*File) *Object {
 	for _, v := range files {
 		parts := strings.Split(strings.TrimPrefix(v.Path, WorkingDirectory()), string(filepath.Separator))
 		if len(parts) == 1 {
-			root.Objects = append(root.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha.AsByteSlice()})
+			root.Objects = append(root.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha})
 			continue // top level file
 		}
 		pn = root
 		for i, p := range parts {
 			if i == len(parts)-1 {
-				pn.Objects = append(pn.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha.AsByteSlice()})
+				pn.Objects = append(pn.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha})
 				continue // leaf
 			}
 			// key for cached nodes
@@ -116,8 +118,7 @@ func ObjectTree(files []*File) *Object {
 func (o *Object) FlattenTree() []*File {
 	var objFiles []*File
 	if o.Typ == ObjectTypeBlob {
-		s, _ := NewSha(o.Sha)
-		f := []*File{{Path: o.Path, Sha: s}}
+		f := []*File{{Path: o.Path, Sha: o.Sha}}
 		return f
 	}
 	for _, v := range o.Objects {
@@ -136,7 +137,7 @@ func ReadObject(sha Sha) (*Object, error) {
 	var o *Object
 
 	// check if a loose file or in a packfile
-	if _, err := os.Stat(filepath.Join(ObjectPath(), string(sha.AsHexBytes()[0:2]), string(sha.AsHexBytes()[2:]))); err != nil {
+	if _, err := os.Stat(filepath.Join(ObjectPath(), string(sha.AsHexString()[0:2]), string(sha.AsHexString()[2:]))); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return lookupInPackfiles(sha)
 		} else {
@@ -144,7 +145,7 @@ func ReadObject(sha Sha) (*Object, error) {
 		}
 	}
 
-	o = &Object{Sha: sha.AsHexBytes()}
+	o = &Object{Sha: sha}
 	o.ReadCloser = ObjectReadCloser(sha.AsHexBytes())
 	z, err := o.ReadCloser()
 	if err != nil {
@@ -201,11 +202,7 @@ func ReadObjectTree(sha Sha) (*Object, error) {
 		if err != nil {
 			return obj, err
 		}
-		sha, err := NewSha(commit.Tree)
-		if err != nil {
-			return obj, err
-		}
-		co, err := ReadObjectTree(sha)
+		co, err := ReadObjectTree(commit.Tree)
 		if err != nil {
 			return nil, err
 		}
@@ -340,11 +337,14 @@ func readCommit(obj *Object) (*Commit, error) {
 		l := s.Bytes()
 		p := bytes.SplitN(l, []byte(" "), 2)
 		t := string(p[0])
-		if c.Tree == nil {
+		if !c.Tree.IsSet() {
 			if t != "tree" {
 				return nil, fmt.Errorf("expected tree got %s", t)
 			}
-			c.Tree = p[1]
+			c.Tree, err = NewSha(p[1])
+			if err != nil {
+				return nil, err
+			}
 			continue
 		}
 		// can be parent
@@ -444,7 +444,7 @@ func CommittedFiles(sha Sha) ([]*File, error) {
 }
 
 // WriteTree writes an Object Tree to the object store.
-func (o *Object) WriteTree() ([]byte, error) {
+func (o *Object) WriteTree() (Sha, error) {
 	// resolve child tree Objects
 	for i, v := range o.Objects {
 		if v.Typ == ObjectTypeTree {
@@ -452,7 +452,7 @@ func (o *Object) WriteTree() ([]byte, error) {
 			// add the corresponding tree returning the Sha
 			sha, err := v.WriteTree()
 			if err != nil {
-				return nil, err
+				return Sha{}, err
 			}
 			o.Objects[i].Sha = sha
 		}
@@ -461,7 +461,7 @@ func (o *Object) WriteTree() ([]byte, error) {
 	return o.writeTree()
 }
 
-func (o *Object) writeTree() ([]byte, error) {
+func (o *Object) writeTree() (Sha, error) {
 	var content []byte
 	var mode string
 	for _, fo := range o.Objects {
@@ -472,14 +472,14 @@ func (o *Object) writeTree() ([]byte, error) {
 			mode = "100644"
 		}
 		// @todo replace base..
-		content = append(content, []byte(fmt.Sprintf("%s %s%s%s", mode, filepath.Base(fo.Path), string(byte(0)), fo.Sha))...)
+		content = append(content, []byte(fmt.Sprintf("%s %s%s%s", mode, filepath.Base(fo.Path), string(byte(0)), fo.Sha.AsByteSlice()))...)
 	}
 	header := []byte(fmt.Sprintf("tree %d%s", len(content), string(byte(0))))
 	return WriteObject(header, content, "", ObjectPath())
 }
 
 // WriteObject writes an object to the object store
-func WriteObject(header []byte, content []byte, contentFile string, path string) ([]byte, error) {
+func WriteObject(header []byte, content []byte, contentFile string, path string) (Sha, error) {
 	var f *os.File
 	var err error
 	buf := bytes.NewBuffer(nil)
@@ -488,33 +488,36 @@ func WriteObject(header []byte, content []byte, contentFile string, path string)
 	r := io.MultiWriter(h, z)
 
 	if _, err := r.Write(header); err != nil {
-		return nil, err
+		return Sha{}, err
 	}
 	if len(content) > 0 {
 		if _, err := r.Write(content); err != nil {
-			return nil, err
+			return Sha{}, err
 		}
 	}
 	if contentFile != "" {
 		f, err = os.Open(contentFile)
 		if err != nil {
-			return nil, err
+			return Sha{}, err
 		}
 		if _, err := io.Copy(r, f); err != nil {
-			return nil, err
+			return Sha{}, err
 		}
 		if err := f.Close(); err != nil {
-			return nil, err
+			return Sha{}, err
 		}
 	}
 
-	sha := h.Sum(nil)
-	path = filepath.Join(path, hex.EncodeToString(sha)[:2])
+	sha, err := NewSha(h.Sum(nil))
+	if err != nil {
+		return Sha{}, err
+	}
+	path = filepath.Join(path, sha.AsHexString()[:2])
 	// create object sha[:2] directory if needed
 	if err := os.MkdirAll(path, 0744); err != nil {
-		return nil, err
+		return Sha{}, err
 	}
-	path = filepath.Join(path, hex.EncodeToString(sha)[2:])
+	path = filepath.Join(path, sha.AsHexString()[2:])
 	// if object exists with Sha already we can avoid writing again
 	_, err = os.Stat(path)
 	if err == nil || !errors.Is(err, fs.ErrNotExist) {
@@ -522,7 +525,7 @@ func WriteObject(header []byte, content []byte, contentFile string, path string)
 		return sha, err
 	}
 	if err := z.Close(); err != nil {
-		return nil, err
+		return Sha{}, err
 	}
 	return sha, os.WriteFile(path, buf.Bytes(), 0655)
 }
@@ -540,14 +543,14 @@ func WriteBlob(path string) (*Object, error) {
 	return &Object{Sha: sha, Path: path}, err
 }
 
-func WriteCommit(c *Commit) ([]byte, error) {
+func WriteCommit(c *Commit) (Sha, error) {
 	var parentCommits string
 	for _, v := range c.Parents {
 		parentCommits += fmt.Sprintf("parent %s\n", v)
 	}
 	content := []byte(fmt.Sprintf(
 		"tree %s\n%sauthor %s %d +0000\ncommitter %s %d +0000\n\n%s",
-		hex.EncodeToString(c.Tree),
+		c.Tree.AsHexString(),
 		parentCommits,
 		c.Author,
 		c.AuthoredTime.Unix(),
@@ -556,17 +559,13 @@ func WriteCommit(c *Commit) ([]byte, error) {
 		c.Message,
 	))
 	header := []byte(fmt.Sprintf("commit %d%s", len(content), string(byte(0))))
-	b, err := WriteObject(header, content, "", ObjectPath())
+	sha, err := WriteObject(header, content, "", ObjectPath())
 	if err != nil {
-		return nil, err
+		return Sha{}, err
 	}
 	branch, err := CurrentBranch()
 	if err != nil {
-		return nil, err
+		return Sha{}, err
 	}
-	sha, err := NewSha(b)
-	if err != nil {
-		return nil, err
-	}
-	return sha.AsHexBytes(), UpdateBranchHead(branch, sha)
+	return sha, UpdateBranchHead(branch, sha)
 }

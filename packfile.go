@@ -59,6 +59,9 @@ func lookupInPackfiles(sha Sha) (*Object, error) {
 	if err := filepath.Walk(
 		ObjectPackfileDirectory(),
 		func(path string, info os.FileInfo, err error) error {
+			if info == nil {
+				return nil
+			}
 			if info.IsDir() {
 				return nil
 			}
@@ -267,7 +270,7 @@ func findObjectInPack(offset uint32, path string, sha Sha) (*Object, error) {
 	case ObjTree:
 		obj.Typ = ObjectTypeTree
 	}
-	obj.Sha = sha.AsByteSlice() // @todo use Sha
+	obj.Sha = sha
 	obj.Length = int(length)
 	// This HeaderLength was added before I knew about pack files,
 	// the purpose was to create a factory that allowed a reader to

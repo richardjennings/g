@@ -219,22 +219,14 @@ func testRestore(t *testing.T, path string, staged bool) {
 	}
 }
 
-func testCommit(t *testing.T, message []byte) []byte {
+func testCommit(t *testing.T, message []byte) g.Sha {
 	sha, err := Commit(message)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sha) != 40 {
-		t.Errorf("expected sha len 40 got %d", len(sha))
-	}
-	commitSha, err := g.NewSha(sha)
-	if err != nil {
-		t.Error(err)
-		return sha
-	}
 
 	// read object
-	c, err := g.ReadCommit(commitSha)
+	c, err := g.ReadCommit(sha)
 	if err != nil {
 		t.Error(err)
 		return sha
