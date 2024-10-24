@@ -11,22 +11,22 @@ import (
 )
 
 // Commit writes a git commit object from the files in the index
-func Commit(message []byte) ([]byte, error) {
+func Commit(message []byte) (g.Sha, error) {
 	idx, err := g.ReadIndex()
 	if err != nil {
-		return nil, err
+		return g.Sha{}, err
 	}
 	root := g.ObjectTree(idx.Files())
 	tree, err := root.WriteTree()
 	if err != nil {
-		return nil, err
+		return g.Sha{}, err
 	}
 	// git has the --allow-empty flag which here defaults to true currently
 	// @todo check for changes to be committed.
 	previousCommits, err := g.PreviousCommits()
 	if err != nil {
 		// @todo error types to check for e.g no previous commits as source of error
-		return nil, err
+		return g.Sha{}, err
 	}
 	commit := &g.Commit{
 		Tree:          tree,
@@ -59,7 +59,7 @@ func Commit(message []byte) ([]byte, error) {
 		commit.Message = msg
 	}
 	if len(commit.Message) == 0 {
-		return nil, errors.New("Aborting commit due to empty commit message.")
+		return g.Sha{}, errors.New("Aborting commit due to empty commit message.")
 	}
 	return g.WriteCommit(commit)
 }

@@ -66,7 +66,7 @@ func Add(paths ...string) error {
 			if err != nil {
 				return err
 			}
-			v.Sha, _ = g.NewSha(obj.Sha)
+			v.Sha = obj.Sha
 		}
 		if err := idx.Add(v); err != nil {
 			return err

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/hex"
 	"fmt"
 	"github.com/richardjennings/g/git"
 	"github.com/spf13/cobra"
@@ -26,7 +25,7 @@ var commitCmd = &cobra.Command{
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		fmt.Println(hex.EncodeToString(sha))
+		fmt.Println(sha.AsHexString())
 	},
 }
 
