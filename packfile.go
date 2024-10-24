@@ -42,7 +42,7 @@ func Lookup(sha Sha) (*Object, error) {
 	return nil, nil
 }
 
-func readMagic(fh *os.File) error {
+func readIdxMagic(fh *os.File) error {
 	magic := make([]byte, 4)
 	if err := binary.Read(fh, binary.BigEndian, magic); err != nil {
 		return err
@@ -54,7 +54,27 @@ func readMagic(fh *os.File) error {
 	return nil
 }
 
+func readPackMagic(fh *os.File) error {
+	magic := make([]byte, 4)
+	if err := binary.Read(fh, binary.BigEndian, magic); err != nil {
+		return err
+	}
+	// check magic bytes
+	if magic[0] != 80 || magic[1] != 65 || magic[2] != 67 || magic[3] != 75 {
+		return errors.New("invalid packfile index magic bytes")
+	}
+	return nil
+}
+
 func readIdxFormat(fh *os.File) (uint32, error) {
+	var format uint32
+	if err := binary.Read(fh, binary.BigEndian, &format); err != nil {
+		return 0, err
+	}
+	return format, nil
+}
+
+func readPackFormat(fh *os.File) (uint32, error) {
 	var format uint32
 	if err := binary.Read(fh, binary.BigEndian, &format); err != nil {
 		return 0, err
@@ -114,7 +134,7 @@ func findOffsetInIdx(sha Sha, path string) (uint32, bool, error) {
 	defer func() { _ = fh.Close() }()
 
 	// read the magic bytes to check correct
-	if err := readMagic(fh); err != nil {
+	if err := readIdxMagic(fh); err != nil {
 		return 0, false, err
 	}
 
@@ -123,7 +143,7 @@ func findOffsetInIdx(sha Sha, path string) (uint32, bool, error) {
 		if err != nil {
 			return 0, false, err
 		} else {
-			return 0, false, errors.New("invalid packfile format, expected 2")
+			return 0, false, errors.New("invalid pack file idx format, expected 2")
 		}
 	}
 
@@ -162,5 +182,58 @@ func findOffsetInIdx(sha Sha, path string) (uint32, bool, error) {
 }
 
 func findObjectInPack(offset uint32, path string) (*Object, error) {
+	fh, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = fh.Close() }()
+
+	if err := readPackMagic(fh); err != nil {
+		return nil, err
+	}
+
+	// read the idx format and assert it is 2
+	if format, err := readPackFormat(fh); err != nil || format != 2 {
+		if err != nil {
+			return nil, err
+		} else {
+			return nil, errors.New("invalid pack file format, expected 2")
+		}
+	}
+
+	var size uint32
+	if err := binary.Read(fh, binary.BigEndian, &size); err != nil {
+		return nil, err
+	}
+
+	if _, err := fh.Seek(int64(offset), io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	typ, length, err := readPackTypeLength(fh)
+
+	fmt.Println(typ, length, err, size)
+
 	return nil, nil
+}
+
+func readPackTypeLength(fh *os.File) (uint8, uint64, error) {
+	var v, t uint8
+	var l uint64
+	for i := 0; i < 9; i++ {
+		if err := binary.Read(fh, binary.BigEndian, &v); err != nil {
+			return 0, 0, err
+		}
+		if i == 0 {
+			t = v & 0b01110000 >> 4
+			l = uint64(v & 0b00001111)
+		} else {
+			l |= uint64(v&0b01111111) << (4 + ((i - 1) * 7))
+		}
+		if v&0b10000000 == 0 {
+			// no continue bit set
+			break
+		}
+	}
+	return t, l, nil
 }
