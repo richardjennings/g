@@ -133,7 +133,18 @@ func (o *Object) FlattenTree() []*File {
 
 func ReadObject(sha Sha) (*Object, error) {
 	var err error
-	o := &Object{Sha: sha.AsHexBytes()}
+	var o *Object
+
+	// check if a loose file or in a packfile
+	if _, err := os.Stat(filepath.Join(ObjectPath(), string(sha.AsHexBytes()[0:2]), string(sha.AsHexBytes()[2:]))); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return lookupInPackfiles(sha)
+		} else {
+			return nil, err
+		}
+	}
+
+	o = &Object{Sha: sha.AsHexBytes()}
 	o.ReadCloser = ObjectReadCloser(sha.AsHexBytes())
 	z, err := o.ReadCloser()
 	if err != nil {
@@ -159,6 +170,7 @@ func ReadObject(sha Sha) (*Object, error) {
 		return nil, fmt.Errorf("unknown %s", string(header[0]))
 	}
 	o.Length, err = strconv.Atoi(string(header[1][:len(header[1])-1]))
+
 	return o, err
 }
 

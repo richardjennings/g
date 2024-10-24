@@ -1,6 +1,7 @@
 package g
 
 import (
+	"compress/zlib"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -9,7 +10,50 @@ import (
 	"path/filepath"
 )
 
-func Lookup(sha Sha) (*Object, error) {
+type (
+	PackObjectType uint8
+)
+
+const (
+	_ PackObjectType = iota
+	ObjCommit
+	ObjTree
+	ObjBlob
+	ObjTag
+	ObjOfsDelta
+	ObjRefDelta
+)
+
+// PackFileReadCloser is a Factory that creates a ReadCloser for
+// reading Object content from a Pack File that is Not Deltified.
+var PackFileReadCloser = func(path string, offset int64) func() (io.ReadCloser, error) {
+	return func() (io.ReadCloser, error) {
+		fh, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = fh.Close() }()
+		_, err = fh.Seek(offset, io.SeekStart)
+		if err != nil {
+			return nil, err
+		}
+		return zlib.NewReader(fh)
+	}
+}
+
+var PackFileReadCloserRefDelta = func(path string, offset int64) func() (io.ReadCloser, error) {
+	return func() (io.ReadCloser, error) {
+		return nil, errors.New("not implemented")
+	}
+}
+
+var PackFileReadCloserOfsDelta = func(path string, offset int64) func() (io.ReadCloser, error) {
+	return func() (io.ReadCloser, error) {
+		return nil, errors.New("not implemented")
+	}
+}
+
+func lookupInPackfiles(sha Sha) (*Object, error) {
 	var packFiles []string
 	// find the available pack files
 	if err := filepath.Walk(
@@ -34,8 +78,7 @@ func Lookup(sha Sha) (*Object, error) {
 			return nil, err
 		}
 		if found {
-			obj, err := findObjectInPack(offset, filepath.Join(ObjectPackfileDirectory(), fmt.Sprintf("pack-%s.pack", v)))
-			fmt.Println(offset, obj, err)
+			return findObjectInPack(offset, filepath.Join(ObjectPackfileDirectory(), fmt.Sprintf("pack-%s.pack", v)), sha)
 		}
 
 	}
@@ -114,7 +157,7 @@ func readObjectOffset(size uint32, fh *os.File, i uint32) (uint32, error) {
 	// skip remaining sorted object names
 	// skip 4-byte CRC32 values (*size)
 	// skip to i offset in 4 byte offset values
-	// @todo if offset most significant bit is set, lookup in long offset table
+	// @todo if offset most significant bit is set, lookupInPackfiles in long offset table
 	if _, err := fh.Seek(int64(4+4+(256*4)+(20*size)+(4*size)+(4*i)), io.SeekStart); err != nil {
 		return 0, err
 	}
@@ -122,7 +165,7 @@ func readObjectOffset(size uint32, fh *os.File, i uint32) (uint32, error) {
 	if err := binary.Read(fh, binary.BigEndian, &offset); err != nil {
 		return 0, err
 	}
-	// we now have the offset to lookup in the pack
+	// we now have the offset to lookupInPackfiles in the pack
 	return offset, nil
 }
 
@@ -153,7 +196,7 @@ func findOffsetInIdx(sha Sha, path string) (uint32, bool, error) {
 		return 0, false, err
 	}
 
-	// lookup search bounds
+	// lookupInPackfiles search bounds
 	var startOffset uint32
 	if sha.hash[0] == 0 {
 		startOffset = 0
@@ -181,7 +224,7 @@ func findOffsetInIdx(sha Sha, path string) (uint32, bool, error) {
 	return offset, found, err
 }
 
-func findObjectInPack(offset uint32, path string) (*Object, error) {
+func findObjectInPack(offset uint32, path string, sha Sha) (*Object, error) {
 	fh, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -212,20 +255,50 @@ func findObjectInPack(offset uint32, path string) (*Object, error) {
 
 	typ, length, err := readPackTypeLength(fh)
 
-	fmt.Println(typ, length, err, size)
+	obj := &Object{}
+	switch typ {
+	case ObjBlob, ObjOfsDelta, ObjRefDelta:
+		obj.Typ = ObjectTypeBlob
+	case ObjCommit, ObjTag:
+		obj.Typ = ObjectTypeCommit
+	case ObjTree:
+		obj.Typ = ObjectTypeTree
+	}
+	obj.Sha = sha.AsByteSlice() // @todo use Sha
+	obj.Length = int(length)
+	// This HeaderLength was added before I knew about pack files,
+	// the purpose was to create a factory that allowed a reader to
+	// be initialized if required. The HeaderLength bytes are discarded
+	// before a ReadCloser implementation streams object content via zlib.
+	// For pack files this still makes sense but here we set it to 0 and
+	// include the seeking as part of the ReadCloser factory config.
+	p, err := fh.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return nil, err
+	}
+	obj.HeaderLength = 0
+	switch typ {
+	case ObjOfsDelta:
+		obj.ReadCloser = PackFileReadCloserOfsDelta(path, p)
+	case ObjRefDelta:
+		obj.ReadCloser = PackFileReadCloserRefDelta(path, p)
+	default:
+		obj.ReadCloser = PackFileReadCloser(path, p)
+	}
 
-	return nil, nil
+	return obj, nil
 }
 
-func readPackTypeLength(fh *os.File) (uint8, uint64, error) {
-	var v, t uint8
+func readPackTypeLength(fh *os.File) (PackObjectType, uint64, error) {
+	var v uint8
+	var t PackObjectType
 	var l uint64
 	for i := 0; i < 9; i++ {
 		if err := binary.Read(fh, binary.BigEndian, &v); err != nil {
 			return 0, 0, err
 		}
 		if i == 0 {
-			t = v & 0b01110000 >> 4
+			t = PackObjectType(v & 0b01110000 >> 4)
 			l = uint64(v & 0b00001111)
 		} else {
 			l |= uint64(v&0b01111111) << (4 + ((i - 1) * 7))
