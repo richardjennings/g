@@ -9,25 +9,10 @@ import (
 // Status currently displays the file statuses comparing the working directory
 // to the index and the index to the last commit (if any).
 func Status(o io.Writer) error {
-	var err error
-	// index
-	idx, err := g.ReadIndex()
+	files, err := g.CurrentStatus()
 	if err != nil {
 		return err
 	}
-
-	commitSha, err := g.LastCommit()
-	if err != nil {
-		// @todo error types to check for e.g no previous commits as source of error
-		return err
-	}
-
-	files, err := g.Status(idx, commitSha)
-
-	if err != nil {
-		return err
-	}
-
 	for _, v := range files.Files() {
 		if v.IdxStatus == g.IndexNotUpdated && v.WdStatus == g.WDIndexAndWorkingTreeMatch {
 			continue
@@ -36,6 +21,5 @@ func Status(o io.Writer) error {
 			return err
 		}
 	}
-
 	return nil
 }

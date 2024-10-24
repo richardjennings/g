@@ -1,13 +1,35 @@
 package g
 
-import "testing"
+import (
+	"testing"
+)
 
-func TestLookup(t *testing.T) {
-	Configure()
-	sha, err := ShaFromHexString("d208f34d505adb8914e5a5c577c6db8359173b4e")
-	//sha, err := ShaFromHexString("ebf679b4719cb6df2e6d9f8a471353abae08cf98")
+func TestPackfile_lookupInPackfiles(t *testing.T) {
+	if err := Configure(
+		WithPath("./test_assets/repo/test-pack-file"),
+		WithGitDirectory(".gitg"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	sha, err := ShaFromHexString("d78ccc12bfbd1e6e0a53a9dd503cdec24f1866d6")
 	if err != nil {
 		t.Fatal(err)
 	}
-	lookupInPackfiles(sha)
+	obj, err := lookupInPackfiles(sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obj == nil {
+		t.Fatal("expected non-nil object")
+	}
+	if obj.Typ != ObjectTypeCommit {
+		t.Errorf("typ = %d, want %d", obj.Typ, ObjectTypeCommit)
+	}
+	files, err := CurrentStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files.Files()[0].IdxStatus != IndexNotUpdated {
+		t.Errorf("idxStatus = %d, want %d", files.Files()[0].IdxStatus, IndexNotUpdated)
+	}
 }

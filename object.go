@@ -192,6 +192,9 @@ func ReadObjectTree(sha Sha) (*Object, error) {
 	if err != nil {
 		return nil, err
 	}
+	if obj == nil {
+		return nil, fmt.Errorf("object %s not found", sha.AsHexString())
+	}
 	switch obj.Typ {
 	case ObjectTypeCommit:
 		commit, err := readCommit(obj)

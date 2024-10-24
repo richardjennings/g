@@ -254,6 +254,9 @@ func findObjectInPack(offset uint32, path string, sha Sha) (*Object, error) {
 	}
 
 	typ, length, err := readPackTypeLength(fh)
+	if err != nil {
+		return nil, err
+	}
 
 	obj := &Object{}
 	switch typ {

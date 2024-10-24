@@ -241,27 +241,6 @@ func fromIndexItemP(p *indexItemP) *Finfo {
 	return f
 }
 
-// Status returns a FileSet containing all files from commit, index and working directory
-// with the corresponding status.
-func Status(idx *Index, commitSha Sha) (*FileSet, error) {
-	var commitFiles []*File
-	var err error
-	if commitSha.IsSet() {
-		commitFiles, err = CommittedFiles(commitSha)
-		if err != nil {
-			return nil, err
-		}
-	}
-	files := NewFileSet(commitFiles)
-	files.MergeFromIndex(NewFileSet(idx.Files()))
-	workingDirectoryFiles, err := Ls(Path())
-	if err != nil {
-		return nil, err
-	}
-	files.MergeFromWD(NewFileSet(workingDirectoryFiles))
-	return files, nil
-}
-
 // FsStatus returns a FileSet containing all files from the index and working directory
 // with the corresponding status.
 func FsStatus(path string) (*FileSet, error) {
