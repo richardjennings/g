@@ -224,8 +224,8 @@ func testCommit(t *testing.T, message []byte) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sha) != 20 {
-		t.Errorf("expected sha len 20 got %d", len(sha))
+	if len(sha) != 40 {
+		t.Errorf("expected sha len 40 got %d", len(sha))
 	}
 	commitSha, err := g.NewSha(sha)
 	if err != nil {
@@ -234,7 +234,7 @@ func testCommit(t *testing.T, message []byte) []byte {
 	}
 
 	// read object
-	c, err := g.ReadCommit(commitSha.AsHexBytes())
+	c, err := g.ReadCommit(commitSha)
 	if err != nil {
 		t.Error(err)
 		return sha

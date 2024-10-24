@@ -47,7 +47,7 @@ func Restore(path string, staged bool) error {
 		// this should not happen
 		return errors.New("index did not return file for some reason")
 	}
-	obj, err := g.ReadObject(file.Sha.AsHexBytes())
+	obj, err := g.ReadObject(file.Sha)
 	if err != nil {
 		return err
 	}
