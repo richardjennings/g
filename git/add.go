@@ -23,7 +23,7 @@ func Add(paths ...string) error {
 		if p == "." {
 			// special case meaning add everything
 			for _, v := range wdFiles.Files() {
-				switch v.WdStatus {
+				switch v.WorkingDirectoryStatus() {
 				case g.WDUntracked, g.WDWorktreeChangedSinceIndex, g.WDDeletedInWorktree:
 					updates = append(updates, v)
 				}
@@ -32,7 +32,7 @@ func Add(paths ...string) error {
 			found := false
 			for _, v := range wdFiles.Files() {
 				if v.Path == p {
-					switch v.WdStatus {
+					switch v.WorkingDirectoryStatus() {
 					case g.WDUntracked, g.WDWorktreeChangedSinceIndex, g.WDDeletedInWorktree:
 						updates = append(updates, v)
 					}
@@ -44,7 +44,7 @@ func Add(paths ...string) error {
 				// try directory @todo more efficient implementation
 				for _, v := range wdFiles.Files() {
 					if strings.HasPrefix(v.Path, p+string(filepath.Separator)) {
-						switch v.WdStatus {
+						switch v.WorkingDirectoryStatus() {
 						case g.WDUntracked, g.WDWorktreeChangedSinceIndex, g.WDDeletedInWorktree:
 							updates = append(updates, v)
 						}
@@ -59,15 +59,6 @@ func Add(paths ...string) error {
 		}
 	}
 	for _, v := range updates {
-		switch v.WdStatus {
-		case g.WDUntracked, g.WDWorktreeChangedSinceIndex:
-			// add the file to the object store
-			obj, err := g.WriteBlob(v.Path)
-			if err != nil {
-				return err
-			}
-			v.Sha = obj.Sha
-		}
 		if err := idx.Add(v); err != nil {
 			return err
 		}

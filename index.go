@@ -82,8 +82,16 @@ func (idx *Index) Rm(path string) error {
 // Add adds a fs.File to the Index Struct. A call to idx.Write is required
 // to flush the changes to the filesystem.
 func (idx *Index) Add(f *File) error {
+	if !f.Sha.IsSet() {
+		o, err := WriteBlob(f.Path)
+		if err != nil {
+			return err
+		}
+		f.Sha = o.Sha
+	}
+
 	// if delete, remove from Index
-	if f.WdStatus == WDDeletedInWorktree {
+	if f.wdStatus == WDDeletedInWorktree {
 		for i, v := range idx.items {
 			if string(v.Name) == f.Path {
 				idx.items = append(idx.items[0:i], idx.items[i+1:]...)
@@ -92,7 +100,7 @@ func (idx *Index) Add(f *File) error {
 			}
 		}
 		return errors.New("somehow the file was not found in Index items to be removed")
-	} else if f.WdStatus == WDUntracked {
+	} else if f.wdStatus == WDUntracked {
 		// just add and sort all of them for now
 		item, err := item(f)
 		if err != nil {
@@ -104,7 +112,7 @@ func (idx *Index) Add(f *File) error {
 		sort.Slice(idx.items, func(i, j int) bool {
 			return string(idx.items[i].Name) < string(idx.items[j].Name)
 		})
-	} else if f.WdStatus == WDWorktreeChangedSinceIndex {
+	} else if f.wdStatus == WDWorktreeChangedSinceIndex {
 		for i, v := range idx.items {
 			if string(v.Name) == f.Path {
 				item, err := item(f)

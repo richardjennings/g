@@ -14,10 +14,10 @@ func Status(o io.Writer) error {
 		return err
 	}
 	for _, v := range files.Files() {
-		if v.IdxStatus == g.IndexNotUpdated && v.WdStatus == g.WDIndexAndWorkingTreeMatch {
+		if v.IndexStatus() == g.IndexNotUpdated && v.WorkingDirectoryStatus() == g.WDIndexAndWorkingTreeMatch {
 			continue
 		}
-		if _, err := fmt.Fprintf(o, "%s%s %s\n", v.IdxStatus, v.WdStatus, v.Path); err != nil {
+		if _, err := fmt.Fprintf(o, "%s%s %s\n", v.IndexStatus(), v.WorkingDirectoryStatus(), v.Path); err != nil {
 			return err
 		}
 	}

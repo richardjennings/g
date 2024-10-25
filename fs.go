@@ -3,7 +3,9 @@ package g
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -35,8 +37,8 @@ const (
 type (
 	File struct {
 		Path      string
-		IdxStatus IndexStatus
-		WdStatus  WDStatus
+		idxStatus IndexStatus
+		wdStatus  WDStatus
 		Sha       Sha
 		Finfo     os.FileInfo
 	}
@@ -202,11 +204,11 @@ func NewFileSet(files []*File) *FileSet {
 func (fs *FileSet) Merge(fss *FileSet) {
 	for _, v := range fss.idx {
 		if _, ok := fs.idx[v.Path]; ok {
-			if fs.idx[v.Path].IdxStatus == IndexNotUpdated {
-				fs.idx[v.Path].IdxStatus = v.IdxStatus
+			if fs.idx[v.Path].idxStatus == IndexNotUpdated {
+				fs.idx[v.Path].idxStatus = v.idxStatus
 			}
-			if fs.idx[v.Path].WdStatus == WDIndexAndWorkingTreeMatch {
-				fs.idx[v.Path].WdStatus = v.WdStatus
+			if fs.idx[v.Path].wdStatus == WDIndexAndWorkingTreeMatch {
+				fs.idx[v.Path].wdStatus = v.wdStatus
 			}
 		} else {
 			fs.files = append(fs.files, v)
@@ -222,19 +224,19 @@ func (fs *FileSet) MergeFromIndex(fss *FileSet) {
 			// in index but not in commit files
 			fs.files = append(fs.files, v)
 			fs.idx[v.Path] = v
-			v.IdxStatus = IndexAddedInIndex
+			v.idxStatus = IndexAddedInIndex
 			continue
 		}
 		fs.idx[v.Path].Finfo = v.Finfo
 		if !bytes.Equal(v.Sha.AsByteSlice(), fs.idx[v.Path].Sha.AsByteSlice()) {
-			fs.idx[v.Path].IdxStatus = IndexUpdatedInIndex
+			fs.idx[v.Path].idxStatus = IndexUpdatedInIndex
 			continue
 		}
 	}
 	for _, v := range fs.files {
 		if _, ok := fss.idx[v.Path]; !ok {
 			// file exists in commit but not in index
-			v.IdxStatus = IndexDeletedInIndex
+			v.idxStatus = IndexDeletedInIndex
 		}
 	}
 }
@@ -246,20 +248,23 @@ func (fs *FileSet) MergeFromWD(fss *FileSet) {
 			// in working directory but not in index or commit files
 			fs.files = append(fs.files, v)
 			fs.idx[v.Path] = v
-			v.WdStatus = WDUntracked
-			v.IdxStatus = IndexUntracked
+			v.wdStatus = WDUntracked
+			v.idxStatus = IndexUntracked
 			continue
 		}
 
 		if fs.idx[v.Path].Finfo == nil {
 			// this is a commit file and not in the index
 			// @todo should this be able to happen ?
-			fs.idx[v.Path].WdStatus = WDUntracked
-			fs.idx[v.Path].IdxStatus = IndexUntracked
+			fs.idx[v.Path].wdStatus = WDUntracked
+			fs.idx[v.Path].idxStatus = IndexUntracked
 		} else {
 			if v.Finfo.ModTime() != fs.idx[v.Path].Finfo.ModTime() {
-				fs.idx[v.Path].WdStatus = WDWorktreeChangedSinceIndex
+				fs.idx[v.Path].wdStatus = WDWorktreeChangedSinceIndex
 				fs.idx[v.Path].Finfo = v.Finfo
+				// flag that the object needs to be indexed
+				// perhaps index add should be smarter instead ?
+				fs.idx[v.Path].Sha = Sha{}
 				continue
 			}
 
@@ -268,7 +273,7 @@ func (fs *FileSet) MergeFromWD(fss *FileSet) {
 	for _, v := range fs.files {
 		if _, ok := fss.idx[v.Path]; !ok {
 			// file exists in commit but not in index
-			v.WdStatus = WDDeletedInWorktree
+			v.wdStatus = WDDeletedInWorktree
 		}
 	}
 }
@@ -328,4 +333,150 @@ func Init() error {
 	}
 	// set default main branch
 	return os.WriteFile(GitHeadPath(), []byte(fmt.Sprintf("ref: %s\n", filepath.Join(RefsHeadPrefix(), DefaultBranch()))), 0644)
+}
+
+func (f File) IndexStatus() IndexStatus {
+	return f.idxStatus
+}
+
+func (f File) WorkingDirectoryStatus() WDStatus {
+	return f.wdStatus
+}
+
+// SwitchToBranch updates the repository content to match that of a specified branch name
+// or returns an error when it is not safe to do so. This should likely be cahnged to
+// SwitchToCommit in the future to handle the broader use-case.
+func SwitchToBranch(name string) error {
+
+	// get commit sha
+	commitSha, err := HeadSHA(name)
+	if err != nil {
+		return err
+	}
+
+	if !commitSha.IsSet() {
+		return fmt.Errorf("fatal: invalid reference: %s", name)
+	}
+
+	// index
+	idx, err := ReadIndex()
+	if err != nil {
+		return err
+	}
+
+	currentCommit, err := LastCommit()
+	if err != nil {
+		// @todo error types to check for e.g no previous commits as source of error
+		return err
+	}
+
+	//
+
+	currentStatus, err := Status(idx, currentCommit)
+	if err != nil {
+		return err
+	}
+
+	// get commit files
+	commitFiles, err := CommittedFiles(commitSha)
+	if err != nil {
+		return err
+	}
+
+	commitSet := NewFileSet(commitFiles)
+
+	var errorWdFiles []*File
+	var errorIdxFiles []*File
+	var deleteFiles []*File
+
+	for _, v := range currentStatus.Files() {
+		if v.IndexStatus() == IndexUpdatedInIndex {
+			errorIdxFiles = append(errorIdxFiles, v)
+			continue
+		}
+		if _, ok := commitSet.Contains(v.Path); ok {
+			if v.WorkingDirectoryStatus() == WDUntracked {
+				errorWdFiles = append(errorWdFiles, v)
+				continue
+			}
+		} else {
+			// should be deleted
+			deleteFiles = append(deleteFiles, v)
+		}
+	}
+	var errMsg = ""
+	if len(errorIdxFiles) > 0 {
+		filestr := ""
+		for _, v := range errorIdxFiles {
+			filestr += fmt.Sprintf("\t%s\n", v.Path)
+		}
+		errMsg = fmt.Sprintf("error: The following untracked working tree files would be overwritten by checkout:\n %sPlease move or remove them before you switch branches.\nAborting", filestr)
+	}
+	if len(errorWdFiles) > 0 {
+		filestr := ""
+		for _, v := range errorWdFiles {
+			filestr += fmt.Sprintf("\t%s\n", v.Path)
+		}
+		if errMsg != "" {
+			errMsg += "\n"
+		}
+		errMsg += fmt.Sprintf("error: The following untracked working tree files would be overwritten by checkout:\n %sPlease move or remove them before you switch branches.\nAborting", filestr)
+	}
+
+	if errMsg != "" {
+		return errors.New(errMsg)
+	}
+
+	for _, v := range deleteFiles {
+		if err := os.Remove(filepath.Join(Path(), v.Path)); err != nil {
+			return err
+		}
+	}
+
+	idx = NewIndex()
+
+	for _, v := range commitFiles {
+		obj, err := ReadObject(v.Sha)
+		if err != nil {
+			return err
+		}
+		r, err := obj.ReadCloser()
+		if err != nil {
+			return err
+		}
+		buf := make([]byte, obj.HeaderLength)
+		if _, err := r.Read(buf); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(filepath.Join(Path(), v.Path), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0655)
+		if err != nil {
+			return err
+		}
+
+		if _, err := io.Copy(f, r); err != nil {
+			return err
+		}
+		if err := r.Close(); err != nil {
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+
+		v.wdStatus = WDUntracked
+		if err := idx.Add(v); err != nil {
+			return err
+		}
+	}
+
+	if err := idx.Write(); err != nil {
+		return err
+	}
+
+	// update HEAD
+	if err := UpdateHead(name); err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -540,7 +540,7 @@ func WriteBlob(path string) (*Object, error) {
 	}
 	header := []byte(fmt.Sprintf("blob %d%s", finfo.Size(), string(byte(0))))
 	sha, err := WriteObject(header, nil, path, ObjectPath())
-	return &Object{Sha: sha, Path: path}, err
+	return &Object{Sha: sha, Path: path, Typ: ObjectTypeBlob}, err
 }
 
 func WriteCommit(c *Commit) (Sha, error) {

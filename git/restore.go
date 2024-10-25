@@ -32,11 +32,11 @@ func Restore(path string, staged bool) error {
 
 	fileStatus, ok := currentStatus.Contains(path)
 	// if the path not found or is untracked working directory fileStatus then error
-	if !ok || fileStatus.WdStatus == g.WDUntracked {
+	if !ok || fileStatus.WorkingDirectoryStatus() == g.WDUntracked {
 		return fmt.Errorf("error: pathspec '%s' did not match any fileStatus(s) known to git", path)
 	}
 	// if in index but not committed
-	if fileStatus.IdxStatus == g.IndexAddedInIndex && fileStatus.WdStatus != g.WDWorktreeChangedSinceIndex {
+	if fileStatus.IndexStatus() == g.IndexAddedInIndex && fileStatus.WorkingDirectoryStatus() != g.WDWorktreeChangedSinceIndex {
 		// there is nothing to do, right ? ...
 		return nil
 	}
