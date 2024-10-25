@@ -59,7 +59,7 @@ func Commit(message []byte) (g.Sha, error) {
 		commit.Message = msg
 	}
 	if len(commit.Message) == 0 {
-		return g.Sha{}, errors.New("Aborting commit due to empty commit message.")
+		return g.Sha{}, errors.New("aborting commit due to empty commit message")
 	}
 	return g.WriteCommit(commit)
 }

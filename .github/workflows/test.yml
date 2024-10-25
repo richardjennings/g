@@ -1,17 +1,27 @@
-name: Tests
-
-on:
-  push:
+name: "Tests"
+on: ["push"]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  ci:
+    name: "Run CI"
+    strategy:
+      fail-fast: false
+      matrix:
+        os:  ["ubuntu-latest", "macOS-latest"]
+        go:  ["1.23.x"]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v2
         with:
-          fetch-depth: 2
-      - uses: actions/setup-go@v3
+          fetch-depth: 1
+      - uses: WillAbides/setup-go-faster@v1.14.0
         with:
-          go-version: '1.20'
-      - name: Run tests
-        run: go test -v ./...
+          go-version: ${{ matrix.go }}
+      - run: "go test ./..."
+      - run: "go vet ./..."
+      - uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          install-go: false
+          cache-key: ${{ matrix.go }}
+          working-directory: ${{ matrix.dir }}

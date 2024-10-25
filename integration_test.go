@@ -77,6 +77,7 @@ func Test_Library(t *testing.T) {
 
 	// write the tree to the object store
 	treeSha, err := tree.WriteTree()
+	e(err, t)
 
 	// check for no previous commits
 	pc, err := PreviousCommits()

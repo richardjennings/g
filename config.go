@@ -20,10 +20,6 @@ const (
 	DefaultPackfileDirectory  = "pack"
 )
 
-func init() {
-	Configure()
-}
-
 var config Cnf
 
 type (
