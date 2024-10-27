@@ -23,6 +23,9 @@ func newSwitchBranchDelta(name string) (*switchBranchDelta, error) {
 	// get all files in working directory, index and current commit with the
 	// index and wd statuses set.
 	curFiles, err := CurrentStatus()
+	if err != nil {
+		return nil, err
+	}
 
 	// get all the files in the branch HEAD commit being switched to
 	commitFiles, err := CommittedFilesForBranchHead(name)

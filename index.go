@@ -172,7 +172,7 @@ func (idx *Index) addFromWorkTree(f *FileStatus) error {
 func (idx *Index) updateItem(i *indexItem) error {
 	found := false
 	for k, v := range idx.items {
-		if bytes.Compare(v.Name, i.Name) == 0 {
+		if bytes.Equal(v.Name, i.Name) {
 			idx.items[k] = i
 			found = true
 		}

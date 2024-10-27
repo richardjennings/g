@@ -446,6 +446,9 @@ func CommittedFilesForBranchHead(name string) (*FfileSet, error) {
 		return nil, err
 	}
 	fs, err := CommittedFiles(commitSha)
+	if err != nil {
+		return nil, err
+	}
 	return NewFfileSet(fs, nil, nil)
 }
 

@@ -37,7 +37,7 @@ func ShaFromHexString(s string) (Sha, error) {
 }
 
 func (s Sha) Matches(ss Sha) bool {
-	return bytes.Compare(s.hash[:], ss.hash[:]) == 0
+	return bytes.Equal(s.hash[:], ss.hash[:])
 }
 
 func (s Sha) String() string {
