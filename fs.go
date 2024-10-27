@@ -1,12 +1,7 @@
 package g
 
 import (
-	"bytes"
-	"encoding/hex"
 	"errors"
-	"fmt"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,45 +9,83 @@ import (
 )
 
 const (
-	IndexNotUpdated IndexStatus = iota
-	IndexUpdatedInIndex
-	IndexTypeChangedInIndex
-	IndexAddedInIndex
-	IndexDeletedInIndex
-	IndexRenamedInIndex
-	IndexCopiedInIndex
-	IndexUntracked
+	// NotUpdated means that the modification time of the file in the
+	// commit is the same as the one in the index.
+	NotUpdated IndexStatus = iota
+
+	// UpdatedInIndex means that the modification time of the file in the
+	// index is newer than that of the commit
+	UpdatedInIndex
+
+	// TypeChangedInIndex mentioned in the Git docs but not implemented
+	// here - file type changed (regular file, symbolic link or submodule)
+	TypeChangedInIndex
+
+	// AddedInIndex means that the file is in the index but not in the
+	// commit.
+	AddedInIndex
+
+	// DeletedInIndex means that the file has been removed from the index
+	DeletedInIndex
+
+	// RenamedInIndex - @todo I do not understand how to implement this
+	RenamedInIndex
+
+	// CopiedInIndex - @todo not sure about this one either
+	// - copied (if config option status.renames is set to "copies")
+	CopiedInIndex
+
+	// UntrackedInIndex means that the file is not in the Index
+	UntrackedInIndex
 )
 
 const (
-	WDIndexAndWorkingTreeMatch WDStatus = iota
-	WDWorktreeChangedSinceIndex
-	WDTypeChangedInWorktreeSinceIndex
-	WDDeletedInWorktree
-	WDRenamedInWorktree
-	WDCopiedInWorktree
-	WDUntracked
+	// IndexAndWorkingTreeMatch means the file modification time in the
+	// working directory is the same as in the index
+	IndexAndWorkingTreeMatch WDStatus = iota
+
+	// WorktreeChangedSinceIndex means the file in the working directory has
+	// a newer modification time than the file in the index
+	WorktreeChangedSinceIndex
+
+	// TypeChangedInWorktreeSinceIndex is not implemented
+	TypeChangedInWorktreeSinceIndex
+
+	// DeletedInWorktree means that the file has been removed from the working
+	// directory but exists in the commit
+	DeletedInWorktree
+
+	// RenamedInWorktree not implemented
+	RenamedInWorktree
+
+	// CopiedInWorktree not implemented
+	CopiedInWorktree
+
+	// Untracked means that the file is in the working directory but not in
+	// the index or commit
+	Untracked
 )
 
 type (
-	File struct {
-		Path      string
+	FileStatus struct {
+		path      string
 		idxStatus IndexStatus
 		wdStatus  WDStatus
-		Sha       Sha
-		Finfo     os.FileInfo
+		index     *fileInfo
+		wd        *fileInfo
+		commit    *fileInfo
 	}
-	Sha struct {
-		set  bool
-		hash [20]byte
+	fileInfo struct {
+		Sha   Sha
+		Finfo os.FileInfo
+	}
+	FfileSet struct {
+		files []*FileStatus
+		idx   map[string]*FileStatus
 	}
 	IndexStatus uint8
 	WDStatus    uint8
-	FileSet     struct {
-		files []*File
-		idx   map[string]*File
-	}
-	Finfo struct {
+	Finfo       struct {
 		CTimeS uint32
 		CTimeN uint32
 		MTimeS uint32
@@ -72,105 +105,53 @@ type (
 	}
 )
 
-// NewSha creates a Sha from either a binary or hex encoded byte slice
-func NewSha(b []byte) (Sha, error) {
-	if len(b) == 40 {
-		s := Sha{set: true}
-		_, _ = hex.Decode(s.hash[:], b)
-		return s, nil
-	}
-	if len(b) == 20 {
-		s := Sha{set: true}
-		copy(s.hash[:], b)
-		return s, nil
-	}
-	return Sha{}, fmt.Errorf("invalid sha %s", b)
-}
-
-func ShaFromHexString(s string) (Sha, error) {
-	v, err := hex.DecodeString(s)
-	if err != nil {
-		return Sha{}, err
-	}
-	return NewSha(v)
-}
-
-func (s Sha) String() string {
-	return s.AsHexString()
-}
-
-func (s Sha) IsSet() bool {
-	return s.set
-}
-
-func (s Sha) AsHexString() string {
-	return hex.EncodeToString(s.hash[:])
-}
-
-func (s Sha) AsHexBytes() []byte {
-	b := make([]byte, 40)
-	hex.Encode(b, s.hash[:])
-	return b
-}
-
-func (s Sha) AsArray() [20]byte {
-	var r [20]byte
-	copy(r[:], s.hash[:])
-	return r
-}
-
-// AsByteSlice returns a Sha as a byte slice
-func (s Sha) AsByteSlice() []byte {
-	return s.hash[:]
-}
-
-func (is IndexStatus) String() string {
+func (is IndexStatus) StatusString() string {
 	switch is {
-	case IndexNotUpdated:
+	case NotUpdated:
 		return " "
-	case IndexUpdatedInIndex:
+	case UpdatedInIndex:
 		return "M"
-	case IndexTypeChangedInIndex:
+	case TypeChangedInIndex:
 		return "T"
-	case IndexAddedInIndex:
+	case AddedInIndex:
 		return "A"
-	case IndexDeletedInIndex:
+	case DeletedInIndex:
 		return "D"
-	case IndexRenamedInIndex:
+	case RenamedInIndex:
 		return "R"
-	case IndexCopiedInIndex:
+	case CopiedInIndex:
 		return "C"
-	case IndexUntracked:
+	case UntrackedInIndex:
 		return "?"
 	default:
 		return ""
 	}
 }
 
-func (wds WDStatus) String() string {
+func (wds WDStatus) StatusString() string {
 	switch wds {
-	case WDIndexAndWorkingTreeMatch:
+	case IndexAndWorkingTreeMatch:
 		return " "
-	case WDWorktreeChangedSinceIndex:
+	case WorktreeChangedSinceIndex:
 		return "M"
-	case WDTypeChangedInWorktreeSinceIndex:
+	case TypeChangedInWorktreeSinceIndex:
 		return "T"
-	case WDDeletedInWorktree:
+	case DeletedInWorktree:
 		return "D"
-	case WDRenamedInWorktree:
+	case RenamedInWorktree:
 		return "R"
-	case WDCopiedInWorktree:
+	case CopiedInWorktree:
 		return "C"
-	case WDUntracked:
+	case Untracked:
 		return "?"
 	default:
 		return ""
 	}
 }
 
-// Ls recursively lists files in path
-func Ls(path string) ([]*File, error) {
-	var files []*File
+// Ls recursively lists files in path that are not ignored
+func Ls(path string) ([]*FileStatus, error) {
+	var files []*FileStatus
 	if err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -180,9 +161,11 @@ func Ls(path string) ([]*File, error) {
 		}
 		// do not add ignored files
 		if !IsIgnored(path) {
-			files = append(files, &File{
-				Path:  strings.TrimPrefix(path, WorkingDirectory()),
-				Finfo: info,
+			files = append(files, &FileStatus{
+				path: strings.TrimPrefix(path, WorkingDirectory()),
+				wd: &fileInfo{
+					Finfo: info,
+				},
 			})
 		}
 		return nil
@@ -191,119 +174,6 @@ func Ls(path string) ([]*File, error) {
 	}
 	return files, nil
 }
-
-func NewFileSet(files []*File) *FileSet {
-	fs := &FileSet{files: files}
-	fs.idx = make(map[string]*File)
-	for _, v := range files {
-		fs.idx[v.Path] = v
-	}
-	return fs
-}
-
-func (fs *FileSet) Merge(fss *FileSet) {
-	for _, v := range fss.idx {
-		if _, ok := fs.idx[v.Path]; ok {
-			if fs.idx[v.Path].idxStatus == IndexNotUpdated {
-				fs.idx[v.Path].idxStatus = v.idxStatus
-			}
-			if fs.idx[v.Path].wdStatus == WDIndexAndWorkingTreeMatch {
-				fs.idx[v.Path].wdStatus = v.wdStatus
-			}
-		} else {
-			fs.files = append(fs.files, v)
-			fs.idx[v.Path] = v
-		}
-	}
-}
-
-func (fs *FileSet) MergeFromIndex(fss *FileSet) {
-	// add files from index to set, updating the status as relevant
-	for _, v := range fss.files {
-		if _, ok := fs.idx[v.Path]; !ok {
-			// in index but not in commit files
-			fs.files = append(fs.files, v)
-			fs.idx[v.Path] = v
-			v.idxStatus = IndexAddedInIndex
-			continue
-		}
-		fs.idx[v.Path].Finfo = v.Finfo
-		if !bytes.Equal(v.Sha.AsByteSlice(), fs.idx[v.Path].Sha.AsByteSlice()) {
-			fs.idx[v.Path].idxStatus = IndexUpdatedInIndex
-			continue
-		}
-	}
-	for _, v := range fs.files {
-		if _, ok := fss.idx[v.Path]; !ok {
-			// file exists in commit but not in index
-			v.idxStatus = IndexDeletedInIndex
-		}
-	}
-}
-
-func (fs *FileSet) MergeFromWD(fss *FileSet) {
-	// add files from working directory to set, updating the status as relevant
-	for _, v := range fss.files {
-		if _, ok := fs.idx[v.Path]; !ok {
-			// in working directory but not in index or commit files
-			fs.files = append(fs.files, v)
-			fs.idx[v.Path] = v
-			v.wdStatus = WDUntracked
-			v.idxStatus = IndexUntracked
-			continue
-		}
-
-		if fs.idx[v.Path].Finfo == nil {
-			// this is a commit file and not in the index
-			// @todo should this be able to happen ?
-			fs.idx[v.Path].wdStatus = WDUntracked
-			fs.idx[v.Path].idxStatus = IndexUntracked
-		} else {
-			if v.Finfo.ModTime() != fs.idx[v.Path].Finfo.ModTime() {
-				fs.idx[v.Path].wdStatus = WDWorktreeChangedSinceIndex
-				fs.idx[v.Path].Finfo = v.Finfo
-				// flag that the object needs to be indexed
-				// perhaps index add should be smarter instead ?
-				fs.idx[v.Path].Sha = Sha{}
-				continue
-			}
-
-		}
-	}
-	for _, v := range fs.files {
-		if _, ok := fss.idx[v.Path]; !ok {
-			// file exists in commit but not in index
-			v.wdStatus = WDDeletedInWorktree
-		}
-	}
-}
-
-func (fs *FileSet) Add(file *File) {
-	fs.idx[file.Path] = file
-	fs.files = append(fs.files, file)
-}
-
-// Compliment returns files in s that are not in fs
-func (fs *FileSet) Compliment(s *FileSet) *FileSet {
-	r := NewFileSet(nil)
-	for k, v := range s.idx {
-		if _, ok := fs.idx[k]; !ok {
-			r.Add(v)
-		}
-	}
-	return r
-}
-
-func (fs *FileSet) Contains(path string) (*File, bool) {
-	v, ok := fs.idx[path]
-	return v, ok
-}
-
-func (fs *FileSet) Files() []*File {
-	return fs.files
-}
-
-// os.FileInfo interface
 
 func (fi *Finfo) Name() string {
 	return fi.NName
@@ -316,167 +186,134 @@ func (fi *Finfo) ModTime() time.Time {
 	return time.Unix(int64(fi.MTimeS), int64(fi.MTimeN))
 }
 
-// Init initializes a git repository
-func Init() error {
-	path := GitPath()
-	if err := os.MkdirAll(path, 0755); err != nil {
-		return err
-	}
-	for _, v := range []string{
-		ObjectPath(),
-		RefsDirectory(),
-		RefsHeadsDirectory(),
-	} {
-		if err := os.MkdirAll(v, 0755); err != nil {
-			log.Fatalln(err)
-		}
-	}
-	// set default main branch
-	return os.WriteFile(GitHeadPath(), []byte(fmt.Sprintf("ref: %s\n", filepath.Join(RefsHeadPrefix(), DefaultBranch()))), 0644)
+func (f FileStatus) Path() string {
+	return f.path
 }
-
-func (f File) IndexStatus() IndexStatus {
+func (f FileStatus) IndexStatus() IndexStatus {
 	return f.idxStatus
 }
-
-func (f File) WorkingDirectoryStatus() WDStatus {
+func (f FileStatus) WorkingDirectoryStatus() WDStatus {
 	return f.wdStatus
 }
 
-// SwitchToBranch updates the repository content to match that of a specified branch name
-// or returns an error when it is not safe to do so. This should likely be cahnged to
-// SwitchToCommit in the future to handle the broader use-case.
-func SwitchToBranch(name string) error {
-
-	// get commit sha
-	commitSha, err := HeadSHA(name)
-	if err != nil {
-		return err
+func NewFfileSet(c []*FileStatus, i []*FileStatus, w []*FileStatus) (*FfileSet, error) {
+	fs := &FfileSet{}
+	fs.idx = make(map[string]*FileStatus)
+	for _, v := range c {
+		fs.idx[v.path] = v
+		fs.files = append(fs.files, v)
 	}
+	fs.mergeFiles(i, 2)
+	fs.mergeFiles(w, 3)
+	return fs, fs.updateStatus()
+}
 
-	if !commitSha.IsSet() {
-		return fmt.Errorf("fatal: invalid reference: %s", name)
-	}
-
-	// index
-	idx, err := ReadIndex()
-	if err != nil {
-		return err
-	}
-
-	currentCommit, err := LastCommit()
-	if err != nil {
-		// @todo error types to check for e.g no previous commits as source of error
-		return err
-	}
-
-	//
-
-	currentStatus, err := Status(idx, currentCommit)
-	if err != nil {
-		return err
-	}
-
-	// get commit files
-	commitFiles, err := CommittedFiles(commitSha)
-	if err != nil {
-		return err
-	}
-
-	commitSet := NewFileSet(commitFiles)
-
-	var errorWdFiles []*File
-	var errorIdxFiles []*File
-	var deleteFiles []*File
-
-	for _, v := range currentStatus.Files() {
-		if v.IndexStatus() == IndexUpdatedInIndex {
-			errorIdxFiles = append(errorIdxFiles, v)
-			continue
+func (f *FfileSet) updateStatus() error {
+	for _, v := range f.files {
+		// worktree status
+		switch true {
+		case v.index != nil && v.wd == nil:
+			v.wdStatus = DeletedInWorktree
+		case v.index != nil && v.wd != nil && v.index.Finfo.ModTime().Compare(v.wd.Finfo.ModTime()) == 0:
+			v.wdStatus = IndexAndWorkingTreeMatch
+		case v.index != nil && v.wd != nil && v.index.Finfo.ModTime().Compare(v.wd.Finfo.ModTime()) != 0:
+			v.wdStatus = WorktreeChangedSinceIndex
+		case v.index == nil && v.wd != nil:
+			v.wdStatus = Untracked
+		case v.commit != nil && v.index == nil && v.wd == nil:
+			// in a commit but not in the index or wd
+			v.wdStatus = IndexAndWorkingTreeMatch // because should flag as deleted in index status
+		default:
+			return errors.New("no matches for working tree status")
 		}
-		if _, ok := commitSet.Contains(v.Path); ok {
-			if v.WorkingDirectoryStatus() == WDUntracked {
-				errorWdFiles = append(errorWdFiles, v)
-				continue
+		// index status
+		switch true {
+		case v.commit == nil && v.index == nil:
+			v.idxStatus = UntrackedInIndex
+		case v.commit != nil && v.index == nil:
+			v.idxStatus = DeletedInIndex
+		case v.commit != nil && v.index != nil && !v.index.Sha.Matches(v.commit.Sha):
+			v.idxStatus = UpdatedInIndex
+		case v.commit != nil && v.index != nil && v.index.Sha.Matches(v.commit.Sha):
+			v.idxStatus = NotUpdated
+		case v.commit == nil && v.index != nil:
+			v.idxStatus = AddedInIndex
+		default:
+			return errors.New("no matches for index status")
+		}
+	}
+	return nil
+}
+
+func (f *FfileSet) mergeFiles(files []*FileStatus, ciw int) {
+	for _, v := range files {
+		v := v
+		ff, ok := f.idx[v.path]
+		if ok {
+			switch ciw {
+			case 1:
+				ff.commit = v.commit
+			case 2:
+				ff.index = v.index
+			case 3:
+				ff.wd = v.wd
 			}
 		} else {
-			// should be deleted
-			deleteFiles = append(deleteFiles, v)
+			f.files = append(f.files, v)
+			f.idx[v.path] = v
 		}
 	}
-	var errMsg = ""
-	if len(errorIdxFiles) > 0 {
-		filestr := ""
-		for _, v := range errorIdxFiles {
-			filestr += fmt.Sprintf("\t%s\n", v.Path)
-		}
-		errMsg = fmt.Sprintf("error: The following untracked working tree files would be overwritten by checkout:\n %sPlease move or remove them before you switch branches.\nAborting", filestr)
+}
+
+func (f *FfileSet) Files() []*FileStatus {
+	return f.files
+}
+
+func (f *FfileSet) Contains(path string) (*FileStatus, bool) {
+	v, ok := f.idx[path]
+	return v, ok
+}
+
+func (wds WDStatus) String() string {
+	switch wds {
+	case IndexAndWorkingTreeMatch:
+		return "IndexAndWorkingTreeMatch"
+	case WorktreeChangedSinceIndex:
+		return "WorktreeChangedSinceIndex"
+	case TypeChangedInWorktreeSinceIndex:
+		return "TypeChangedInWorktreeSinceIndex"
+	case DeletedInWorktree:
+		return "DeletedInWorktree"
+	case RenamedInWorktree:
+		return "RenamedInWorktree"
+	case CopiedInWorktree:
+		return "CopiedInWorktree"
+	case Untracked:
+		return "Untracked"
+	default:
+		return "UNKNOWN"
 	}
-	if len(errorWdFiles) > 0 {
-		filestr := ""
-		for _, v := range errorWdFiles {
-			filestr += fmt.Sprintf("\t%s\n", v.Path)
-		}
-		if errMsg != "" {
-			errMsg += "\n"
-		}
-		errMsg += fmt.Sprintf("error: The following untracked working tree files would be overwritten by checkout:\n %sPlease move or remove them before you switch branches.\nAborting", filestr)
+}
+
+func (is IndexStatus) String() string {
+	switch is {
+	case NotUpdated:
+		return "NotUpdated"
+	case UpdatedInIndex:
+		return "UpdatedInIndex"
+	case TypeChangedInIndex:
+		return "TypeChangedInIndex"
+	case AddedInIndex:
+		return "AddedInIndex"
+	case DeletedInIndex:
+		return "DeletedInIndex"
+	case RenamedInIndex:
+		return "RenamedInIndex"
+	case CopiedInIndex:
+		return "CopiedInIndex"
+	case UntrackedInIndex:
+		return "UntrackedInIndex"
+	default:
+		return "UNKNOWN"
 	}
-
-	if errMsg != "" {
-		return errors.New(errMsg)
-	}
-
-	for _, v := range deleteFiles {
-		if err := os.Remove(filepath.Join(Path(), v.Path)); err != nil {
-			return err
-		}
-	}
-
-	idx = NewIndex()
-
-	for _, v := range commitFiles {
-		obj, err := ReadObject(v.Sha)
-		if err != nil {
-			return err
-		}
-		r, err := obj.ReadCloser()
-		if err != nil {
-			return err
-		}
-		buf := make([]byte, obj.HeaderLength)
-		if _, err := r.Read(buf); err != nil {
-			return err
-		}
-		f, err := os.OpenFile(filepath.Join(Path(), v.Path), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0655)
-		if err != nil {
-			return err
-		}
-
-		if _, err := io.Copy(f, r); err != nil {
-			return err
-		}
-		if err := r.Close(); err != nil {
-			return err
-		}
-		if err := f.Close(); err != nil {
-			return err
-		}
-
-		v.wdStatus = WDUntracked
-		if err := idx.Add(v); err != nil {
-			return err
-		}
-	}
-
-	if err := idx.Write(); err != nil {
-		return err
-	}
-
-	// update HEAD
-	if err := UpdateHead(name); err != nil {
-		return err
-	}
-
-	return nil
 }

@@ -77,7 +77,7 @@ func (c Commit) String() string {
 
 // ObjectTree creates a Tree Object with child Objects representing the files and
 // paths in the provided files.
-func ObjectTree(files []*File) *Object {
+func ObjectTree(files []*FileStatus) *Object {
 	root := &Object{
 		Typ: ObjectTypeTree,
 	}
@@ -86,15 +86,15 @@ func ObjectTree(files []*File) *Object {
 	// mp holds a cache of file paths to objectTree nodes
 	mp := make(map[string]*Object)
 	for _, v := range files {
-		parts := strings.Split(strings.TrimPrefix(v.Path, WorkingDirectory()), string(filepath.Separator))
+		parts := strings.Split(strings.TrimPrefix(v.path, WorkingDirectory()), string(filepath.Separator))
 		if len(parts) == 1 {
-			root.Objects = append(root.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha})
+			root.Objects = append(root.Objects, &Object{Typ: ObjectTypeBlob, Path: v.path, Sha: v.index.Sha})
 			continue // top level file
 		}
 		pn = root
 		for i, p := range parts {
 			if i == len(parts)-1 {
-				pn.Objects = append(pn.Objects, &Object{Typ: ObjectTypeBlob, Path: v.Path, Sha: v.Sha})
+				pn.Objects = append(pn.Objects, &Object{Typ: ObjectTypeBlob, Path: v.path, Sha: v.index.Sha})
 				continue // leaf
 			}
 			// key for cached nodes
@@ -115,16 +115,16 @@ func ObjectTree(files []*File) *Object {
 }
 
 // FlattenTree turns a TreeObject structure into a flat list of file paths
-func (o *Object) FlattenTree() []*File {
-	var objFiles []*File
+func (o *Object) FlattenTree() []*FileStatus {
+	var objFiles []*FileStatus
 	if o.Typ == ObjectTypeBlob {
-		f := []*File{{Path: o.Path, Sha: o.Sha}}
+		f := []*FileStatus{{path: o.Path, commit: &fileInfo{Sha: o.Sha}}}
 		return f
 	}
 	for _, v := range o.Objects {
 		objs := v.FlattenTree()
 		for i := range objs {
-			objs[i].Path = filepath.Join(o.Path, objs[i].Path)
+			objs[i].path = filepath.Join(o.Path, objs[i].path)
 		}
 		objFiles = append(objFiles, objs...)
 	}
@@ -132,12 +132,16 @@ func (o *Object) FlattenTree() []*File {
 	return objFiles
 }
 
+func objectPath(sha Sha) string {
+	return filepath.Join(ObjectPath(), sha.AsHexString()[0:2], sha.AsHexString()[2:])
+}
+
 func ReadObject(sha Sha) (*Object, error) {
 	var err error
 	var o *Object
 
 	// check if a loose file or in a packfile
-	if _, err := os.Stat(filepath.Join(ObjectPath(), string(sha.AsHexString()[0:2]), string(sha.AsHexString()[2:]))); err != nil {
+	if _, err := os.Stat(objectPath(sha)); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return lookupInPackfiles(sha)
 		} else {
@@ -435,7 +439,17 @@ func readCommitter(b []byte, c *Commit) error {
 	return nil
 }
 
-func CommittedFiles(sha Sha) ([]*File, error) {
+func CommittedFilesForBranchHead(name string) (*FfileSet, error) {
+	// get all files in new commit
+	commitSha, err := HeadSHA(name)
+	if err != nil {
+		return nil, err
+	}
+	fs, err := CommittedFiles(commitSha)
+	return NewFfileSet(fs, nil, nil)
+}
+
+func CommittedFiles(sha Sha) ([]*FileStatus, error) {
 	obj, err := ReadObjectTree(sha)
 	if err != nil {
 		return nil, err
@@ -543,7 +557,7 @@ func WriteBlob(path string) (*Object, error) {
 	return &Object{Sha: sha, Path: path, Typ: ObjectTypeBlob}, err
 }
 
-func WriteCommit(c *Commit) (Sha, error) {
+func writeCommit(c *Commit) (Sha, error) {
 	var parentCommits string
 	for _, v := range c.Parents {
 		parentCommits += fmt.Sprintf("parent %s\n", v)
@@ -568,4 +582,35 @@ func WriteCommit(c *Commit) (Sha, error) {
 		return Sha{}, err
 	}
 	return sha, UpdateBranchHead(branch, sha)
+}
+
+func writeObjectToWorkingTree(sha Sha, path string) error {
+	obj, err := ReadObject(sha)
+	if err != nil {
+		return err
+	}
+	r, err := obj.ReadCloser()
+	if err != nil {
+		return err
+	}
+	buf := make([]byte, obj.HeaderLength)
+	if _, err := r.Read(buf); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(Path(), path), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0655)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(f, r); err != nil {
+		return err
+	}
+	if err := r.Close(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	return nil
 }
