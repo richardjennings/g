@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"syscall"
 )
 
@@ -170,13 +171,9 @@ func (idx *Index) addFromWorkTree(f *FileStatus) error {
 }
 
 func (idx *Index) upsertItem(item *indexItem) error {
-	for k, v := range idx.items {
-		if bytes.Equal(v.Name, item.Name) {
-			idx.items[k] = item
-			return nil
-		}
+	if err := idx.updateItem(item); err != nil {
+		idx.addItem(item)
 	}
-	idx.items = append(idx.items, item)
 	return nil
 }
 
@@ -207,9 +204,16 @@ func (idx *Index) Add(f *FileStatus) error {
 
 // Write writes an Index struct to the Git Index
 func (idx *Index) Write() error {
+
 	if idx.header.NumEntries != uint32(len(idx.items)) {
 		return errors.New("index numEntries and length of items inconsistent")
 	}
+
+	// and sort @todo more efficient
+	sort.Slice(idx.items, func(i, j int) bool {
+		return string(idx.items[i].Name) < string(idx.items[j].Name)
+	})
+
 	path := IndexFilePath()
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {

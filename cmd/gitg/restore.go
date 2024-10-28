@@ -19,6 +19,6 @@ var restoreCmd = &cobra.Command{
 }
 
 func init() {
-	restoreCmd.Flags().BoolVar(&restoreStaged, "staged", true, "--staged")
+	restoreCmd.Flags().BoolVar(&restoreStaged, "staged", false, "--staged")
 	rootCmd.AddCommand(restoreCmd)
 }

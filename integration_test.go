@@ -146,7 +146,9 @@ func Test_Integration(t *testing.T) {
 		assertStatus(t, map[string]IndexStatus{"c": AddedInIndex}, map[string]WDStatus{"c": IndexAndWorkingTreeMatch})
 	}
 
-	// restore a file
+	// restore --staged a file that is commited, has been modified, added to
+	// index
+	// restore a working tree file that is in a previous commit
 	{
 		// commit change to 'c'
 		_ = assertCreateCommit(t, &Commit{
@@ -168,7 +170,10 @@ func Test_Integration(t *testing.T) {
 		assertRestore(t, "c", true)
 		// check status
 		assertStatus(t, map[string]IndexStatus{"c": NotUpdated}, map[string]WDStatus{"c": WorktreeChangedSinceIndex})
-
+		// git restore c
+		assertRestore(t, "c", false)
+		// check status
+		assertStatus(t, map[string]IndexStatus{"c": NotUpdated}, map[string]WDStatus{"c": IndexAndWorkingTreeMatch})
 	}
 
 }
