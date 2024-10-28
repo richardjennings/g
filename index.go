@@ -169,6 +169,17 @@ func (idx *Index) addFromWorkTree(f *FileStatus) error {
 	return nil
 }
 
+func (idx *Index) upsertItem(item *indexItem) error {
+	for k, v := range idx.items {
+		if bytes.Equal(v.Name, item.Name) {
+			idx.items[k] = item
+			return nil
+		}
+	}
+	idx.items = append(idx.items, item)
+	return nil
+}
+
 func (idx *Index) updateItem(i *indexItem) error {
 	found := false
 	for k, v := range idx.items {

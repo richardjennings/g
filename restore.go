@@ -8,7 +8,42 @@ import (
 	"path/filepath"
 )
 
+func RestoreStaged(path string) error {
+	// update the index with the sha from the last commit
+	idx, err := ReadIndex()
+	if err != nil {
+		return err
+	}
+	status, err := CurrentStatus()
+	if err != nil {
+		return err
+	}
+	f, ok := status.idx[path]
+	if !ok {
+		return fmt.Errorf("file %s not found in index", path)
+	}
+	item, err := newItem(f.wd.Finfo, f.commit.Sha, f.path)
+	if err != nil {
+		return err
+	}
+	// Work Tree files do not have a hash associated until they are added to the
+	// index. Therefore, we use filesystem modification time to compare work tree
+	// files against the index. We do not know the previous actual modification
+	// time from the commit - as git does not track timestamps like that outside
+	// of the local index. So - just subtract 1 from the working directory
+	// timestamp, so that the index is detected as different form the working
+	// tree.
+	item.MTimeN--
+	if err := idx.upsertItem(item); err != nil {
+		return err
+	}
+	return idx.Write()
+}
+
 func Restore(path string, staged bool) error {
+	if staged {
+		return RestoreStaged(path)
+	}
 	idx, err := ReadIndex()
 	if err != nil {
 		return err
@@ -20,13 +55,6 @@ func Restore(path string, staged bool) error {
 	currentStatus, err := Status(idx, currentCommit)
 	if err != nil {
 		return err
-	}
-	if staged {
-		// remove file from index
-		if err := idx.Rm(path); err != nil {
-			return err
-		}
-		return idx.Write()
 	}
 
 	fileStatus, ok := currentStatus.Contains(path)

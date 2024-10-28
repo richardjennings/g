@@ -146,14 +146,42 @@ func Test_Integration(t *testing.T) {
 		assertStatus(t, map[string]IndexStatus{"c": AddedInIndex}, map[string]WDStatus{"c": IndexAndWorkingTreeMatch})
 	}
 
-	// check for semantics when switching branch
-	//
+	// restore a file
+	{
+		// commit change to 'c'
+		_ = assertCreateCommit(t, &Commit{
+			Author:        fmt.Sprintf("%s <%s>", "tester", "tester@test.com"),
+			AuthoredTime:  time.Now(),
+			Committer:     fmt.Sprintf("%s <%s>", "tester", "tester@test.com"),
+			CommittedTime: time.Now(),
+			Message:       []byte("this is yet another commit message"),
+		})
+		// change 'c'
+		e(os.WriteFile(filepath.Join(dir, "c"), []byte("cc"), 0644), t)
+		// check status is correct
+		assertStatus(t, map[string]IndexStatus{"c": NotUpdated}, map[string]WDStatus{"c": WorktreeChangedSinceIndex})
+		// add to index
+		assertAddFiles(t, []string{"c"})
+		// check status
+		assertStatus(t, map[string]IndexStatus{"c": UpdatedInIndex}, map[string]WDStatus{"c": IndexAndWorkingTreeMatch})
+		// restore --staged c
+		assertRestore(t, "c", true)
+		// check status
+		assertStatus(t, map[string]IndexStatus{"c": NotUpdated}, map[string]WDStatus{"c": WorktreeChangedSinceIndex})
+
+	}
 
 }
 
 func e(err error, t *testing.T) {
 	t.Helper()
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertRestore(t *testing.T, path string, staged bool) {
+	if err := Restore(path, staged); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -256,7 +284,7 @@ func assertStatus(t *testing.T, i map[string]IndexStatus, w map[string]WDStatus)
 			t.Fatalf("expected file '%s'", k)
 		}
 		if f.wdStatus != v {
-			t.Errorf("expected file '%s' to have working directory status '%d' got '%d'", k, v, f.wdStatus)
+			t.Errorf("expected file '%s' to have working directory status '%s' got '%s'", k, v, f.wdStatus)
 		}
 	}
 }
