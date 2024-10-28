@@ -29,7 +29,7 @@ func TestPackfile_lookupInPackfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if files.Files()[0].IdxStatus != IndexNotUpdated {
-		t.Errorf("idxStatus = %d, want %d", files.Files()[0].IdxStatus, IndexNotUpdated)
+	if files.Files()[0].idxStatus != NotUpdated {
+		t.Errorf("idxStatus = %d, want %d", files.Files()[0].idxStatus, NotUpdated)
 	}
 }

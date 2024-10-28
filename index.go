@@ -1,6 +1,7 @@
 package g
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/binary"
 	"errors"
@@ -46,27 +47,33 @@ type (
 )
 
 // Files lists the files in the index
-func (idx *Index) Files() []*File {
-	var files []*File
+func (idx *Index) Files() []*FileStatus {
+	var files []*FileStatus
 	for _, v := range idx.items {
 		s, _ := NewSha(v.Sha[:])
-		idx := &File{Path: string(v.Name), Sha: s, Finfo: fromIndexItemP(v.indexItemP)}
+		idx := &FileStatus{
+			path:  string(v.Name),
+			index: &fileInfo{Sha: s, Finfo: fromIndexItemP(v.indexItemP)},
+		}
 		files = append(files, idx)
 	}
 	return files
 }
 
-func (idx *Index) File(path string) *File {
+func (idx *Index) File(path string) *FileStatus {
 	for _, v := range idx.items {
 		if string(v.Name) == path {
 			s, _ := NewSha(v.Sha[:])
-			return &File{Path: string(v.Name), Sha: s, Finfo: fromIndexItemP(v.indexItemP)}
+			return &FileStatus{
+				path:  string(v.Name),
+				index: &fileInfo{Sha: s, Finfo: fromIndexItemP(v.indexItemP)},
+			}
 		}
 	}
 	return nil
 }
 
-// Rm removes a File from the Index
+// Rm removes a item from the Index
 // A call to idx.Write is required to persist the change.
 func (idx *Index) Rm(path string) error {
 	for i, v := range idx.items {
@@ -79,51 +86,134 @@ func (idx *Index) Rm(path string) error {
 	return fmt.Errorf("error: pathspec '%s' did not match any file(s) known to git", path)
 }
 
-// Add adds a fs.File to the Index Struct. A call to idx.Write is required
-// to flush the changes to the filesystem.
-func (idx *Index) Add(f *File) error {
-	// if delete, remove from Index
-	if f.WdStatus == WDDeletedInWorktree {
-		for i, v := range idx.items {
-			if string(v.Name) == f.Path {
-				idx.items = append(idx.items[0:i], idx.items[i+1:]...)
-				idx.header.NumEntries--
-				return nil
-			}
+func newItem(fi os.FileInfo, sha Sha, path string) (*indexItem, error) {
+	item := &indexItem{indexItemP: &indexItemP{}}
+	switch runtime.GOOS {
+	case "darwin", "linux":
+	default:
+		return nil, errors.New("setItemOsSpecificStat not implemented, unsupported OS")
+	}
+	switch fi := fi.(type) {
+	case *Finfo:
+		item.CTimeS = fi.CTimeS
+		item.CTimeN = fi.CTimeN
+		item.MTimeS = fi.MTimeS
+		item.MTimeN = fi.MTimeN
+		item.Dev = fi.Dev
+		item.Ino = fi.Ino
+		item.Mode = fi.MMode
+		item.Uid = fi.Uid
+	default:
+		setItemOsSpecificStat(fi, item)
+		item.Dev = uint32(fi.Sys().(*syscall.Stat_t).Dev)
+		item.Ino = uint32(fi.Sys().(*syscall.Stat_t).Ino)
+		if fi.IsDir() {
+			item.Mode = uint32(040000)
+		} else {
+			item.Mode = uint32(0100644)
 		}
-		return errors.New("somehow the file was not found in Index items to be removed")
-	} else if f.WdStatus == WDUntracked {
-		// just add and sort all of them for now
-		item, err := item(f)
-		if err != nil {
-			return err
-		}
-		idx.items = append(idx.items, item)
-		idx.header.NumEntries++
-		// and sort @todo more efficient
-		sort.Slice(idx.items, func(i, j int) bool {
-			return string(idx.items[i].Name) < string(idx.items[j].Name)
-		})
-	} else if f.WdStatus == WDWorktreeChangedSinceIndex {
-		for i, v := range idx.items {
-			if string(v.Name) == f.Path {
-				item, err := item(f)
-				if err != nil {
-					return err
-				}
-				idx.items[i] = item
-			}
+		item.Uid = fi.Sys().(*syscall.Stat_t).Uid
+		item.Gid = fi.Sys().(*syscall.Stat_t).Gid
+		item.Size = uint32(fi.Size())
+	}
+	item.Sha = sha.AsArray()
+	nameLen := len(path)
+	if nameLen < 0xFFF {
+		item.Flags = uint16(len(path))
+	} else {
+		item.Flags = 0xFFF
+	}
+	item.Name = []byte(path)
+
+	return item, nil
+}
+
+func (idx *Index) addFromIndex(f *FileStatus) error {
+	item, err := newItem(f.index.Finfo, f.index.Sha, f.Path())
+	if err != nil {
+		return err
+	}
+	idx.addItem(item)
+	return nil
+}
+
+func (idx *Index) addFromCommit(f *FileStatus) error {
+	finfo, err := os.Stat(filepath.Join(Path(), f.Path()))
+	if err != nil {
+		return err
+	}
+	item, err := newItem(finfo, f.commit.Sha, f.Path())
+	if err != nil {
+		return err
+	}
+	// addFromCommit is used to recreate index when switching branch so only
+	// ever needs to be an add.
+	idx.addItem(item)
+	return nil
+}
+
+func (idx *Index) addFromWorkTree(f *FileStatus) error {
+	o, err := WriteBlob(f.Path())
+	if err != nil {
+		return err
+	}
+	f.wd.Sha = o.Sha
+	item, err := newItem(f.wd.Finfo, o.Sha, f.Path())
+	if err != nil {
+		return err
+	}
+	if f.index == nil {
+		idx.addItem(item)
+	} else {
+		return idx.updateItem(item)
+	}
+	return nil
+}
+
+func (idx *Index) upsertItem(item *indexItem) error {
+	if err := idx.updateItem(item); err != nil {
+		idx.addItem(item)
+	}
+	return nil
+}
+
+func (idx *Index) updateItem(i *indexItem) error {
+	found := false
+	for k, v := range idx.items {
+		if bytes.Equal(v.Name, i.Name) {
+			idx.items[k] = i
+			found = true
 		}
 	}
-
+	if !found {
+		return errors.New("not found not updated in index")
+	}
 	return nil
+}
+
+func (idx *Index) addItem(i *indexItem) {
+	idx.items = append(idx.items, i)
+	idx.header.NumEntries++
+}
+
+// Add adds a fs.FileStatus to the Index Struct. A call to idx.Write is required
+// to flush the changes to the filesystem.
+func (idx *Index) Add(f *FileStatus) error {
+	return idx.addFromWorkTree(f)
 }
 
 // Write writes an Index struct to the Git Index
 func (idx *Index) Write() error {
+
 	if idx.header.NumEntries != uint32(len(idx.items)) {
 		return errors.New("index numEntries and length of items inconsistent")
 	}
+
+	// and sort @todo more efficient
+	sort.Slice(idx.items, func(i, j int) bool {
+		return string(idx.items[i].Name) < string(idx.items[j].Name)
+	})
+
 	path := IndexFilePath()
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
@@ -165,57 +255,6 @@ func (idx *Index) Write() error {
 	return f.Close()
 }
 
-func item(f *File) (*indexItem, error) {
-	if f.Finfo == nil {
-		info, err := os.Stat(filepath.Join(Path(), f.Path))
-		if err != nil {
-			return nil, err
-		}
-		f.Finfo = info
-	}
-	item := &indexItem{indexItemP: &indexItemP{}}
-	switch runtime.GOOS {
-	case "darwin":
-	case "linux":
-	default:
-		return nil, errors.New("setItemOsSpecificStat not implemented, unsupported OS")
-	}
-	switch f.Finfo.(type) {
-	case *Finfo:
-		fi := f.Finfo.(*Finfo)
-		item.CTimeS = fi.CTimeS
-		item.CTimeN = fi.CTimeN
-		item.MTimeS = fi.MTimeS
-		item.MTimeN = fi.MTimeN
-		item.Dev = fi.Dev
-		item.Ino = fi.Ino
-		item.Mode = fi.MMode
-		item.Uid = fi.Uid
-	default:
-		setItemOsSpecificStat(f.Finfo, item)
-		item.Dev = uint32(f.Finfo.Sys().(*syscall.Stat_t).Dev)
-		item.Ino = uint32(f.Finfo.Sys().(*syscall.Stat_t).Ino)
-		if f.Finfo.IsDir() {
-			item.Mode = uint32(040000)
-		} else {
-			item.Mode = uint32(0100644)
-		}
-		item.Uid = f.Finfo.Sys().(*syscall.Stat_t).Uid
-		item.Gid = f.Finfo.Sys().(*syscall.Stat_t).Gid
-		item.Size = uint32(f.Finfo.Size())
-	}
-	item.Sha = f.Sha.AsArray()
-	nameLen := len(f.Path)
-	if nameLen < 0xFFF {
-		item.Flags = uint16(len(f.Path))
-	} else {
-		item.Flags = 0xFFF
-	}
-	item.Name = []byte(f.Path)
-
-	return item, nil
-}
-
 func NewIndex() *Index {
 	return &Index{header: &indexHeader{
 		Sig:        [4]byte{'D', 'I', 'R', 'C'},
@@ -241,21 +280,19 @@ func fromIndexItemP(p *indexItemP) *Finfo {
 	return f
 }
 
-// FsStatus returns a FileSet containing all files from the index and working directory
+// FsStatus returns a FfileSet containing all files from the index and working directory
 // with the corresponding status.
-func FsStatus(path string) (*FileSet, error) {
+func FsStatus(path string) (*FfileSet, error) {
 	idx, err := ReadIndex()
 	if err != nil {
 		return nil, err
 	}
 	idxFiles := idx.Files()
-	idxSet := NewFileSet(idxFiles)
 	files, err := Ls(path)
 	if err != nil {
 		return nil, err
 	}
-	idxSet.MergeFromWD(NewFileSet(files))
-	return idxSet, nil
+	return NewFfileSet(nil, idxFiles, files)
 }
 
 // ReadIndex reads the Git Index into an Index struct

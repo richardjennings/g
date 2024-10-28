@@ -1,4 +1,4 @@
-package git
+package main
 
 import (
 	"bytes"
@@ -214,7 +214,7 @@ func testStatus(t *testing.T, expected string) {
 }
 
 func testRestore(t *testing.T, path string, staged bool) {
-	if err := Restore(path, staged); err != nil {
+	if err := g.Restore(path, staged); err != nil {
 		t.Fatal(err)
 	}
 }

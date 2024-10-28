@@ -1,25 +1,29 @@
 package main
 
 import (
-	"fmt"
-	"github.com/richardjennings/g/git"
+	"github.com/richardjennings/g"
 	"github.com/spf13/cobra"
-	"log"
-	"os"
 )
 
 var switchCmd = &cobra.Command{
 	Use:  "switch",
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := configure(); err != nil {
-			log.Fatalln(err)
+			return err
 		}
-		if err := git.SwitchBranch(args[0]); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
+		return SwitchBranch(args[0])
 	},
+}
+
+func SwitchBranch(name string) error {
+	errFiles, err := g.SwitchBranch(name)
+	if err != nil {
+		return err
+	}
+	// @todo print out errFiles
+	_ = errFiles
+	return nil
 }
 
 func init() {

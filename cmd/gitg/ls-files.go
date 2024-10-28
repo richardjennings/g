@@ -2,18 +2,17 @@ package main
 
 import (
 	"fmt"
-	"github.com/richardjennings/g/git"
+	"github.com/richardjennings/g"
 	"github.com/spf13/cobra"
-	"log"
 )
 
 var lsFilesCmd = &cobra.Command{
 	Use: "ls-files",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := configure(); err != nil {
-			log.Fatalln(err)
+			return err
 		}
-		files, err := git.LsFiles()
+		files, err := LsFiles()
 		if err != nil {
 			return err
 		}
@@ -22,6 +21,19 @@ var lsFilesCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// LsFiles returns a list of files in the index
+func LsFiles() ([]string, error) {
+	idx, err := g.ReadIndex()
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, v := range idx.Files() {
+		files = append(files, v.Path())
+	}
+	return files, nil
 }
 
 func init() {

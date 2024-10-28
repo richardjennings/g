@@ -24,8 +24,8 @@ const (
 	ObjRefDelta
 )
 
-// PackFileReadCloser is a Factory that creates a ReadCloser for
-// reading Object content from a Pack File that is Not Deltified.
+// PackFileReadCloser is a Factory that creates a ReadCloser for reading Object
+// content from a Pack File that is Not Deltified.
 var PackFileReadCloser = func(path string, offset int64) func() (io.ReadCloser, error) {
 	return func() (io.ReadCloser, error) {
 		fh, err := os.Open(path)
@@ -83,7 +83,6 @@ func lookupInPackfiles(sha Sha) (*Object, error) {
 		if found {
 			return findObjectInPack(offset, filepath.Join(ObjectPackfileDirectory(), fmt.Sprintf("pack-%s.pack", v)), sha)
 		}
-
 	}
 	return nil, nil
 }
@@ -156,7 +155,6 @@ func findObjectName(items uint32, fh *os.File, sha Sha) (uint32, bool, error) {
 }
 
 func readObjectOffset(size uint32, fh *os.File, i uint32) (uint32, error) {
-
 	// skip remaining sorted object names
 	// skip 4-byte CRC32 values (*size)
 	// skip to i offset in 4 byte offset values
@@ -178,12 +176,10 @@ func findOffsetInIdx(sha Sha, path string) (uint32, bool, error) {
 		return 0, false, err
 	}
 	defer func() { _ = fh.Close() }()
-
 	// read the magic bytes to check correct
 	if err := readIdxMagic(fh); err != nil {
 		return 0, false, err
 	}
-
 	// read the idx format and assert it is 2
 	if format, err := readIdxFormat(fh); err != nil || format != 2 {
 		if err != nil {
@@ -192,13 +188,11 @@ func findOffsetInIdx(sha Sha, path string) (uint32, bool, error) {
 			return 0, false, errors.New("invalid pack file idx format, expected 2")
 		}
 	}
-
 	// read fanout buckets
 	fanout, err := readFanout(fh)
 	if err != nil {
 		return 0, false, err
 	}
-
 	// lookupInPackfiles search bounds
 	var startOffset uint32
 	if sha.hash[0] == 0 {

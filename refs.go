@@ -11,6 +11,7 @@ import (
 	"strings"
 )
 
+// UpdateHead writes branch name as a reference in the Git HEAD file
 func UpdateHead(branch string) error {
 	return os.WriteFile(GitHeadPath(), []byte(fmt.Sprintf("ref: refs/heads/%s\n", branch)), 0655)
 }
@@ -64,8 +65,9 @@ func CurrentBranch() (string, error) {
 	return string(b[16 : len(b)-1]), nil
 }
 
-// LastCommit return the last commit SHA on the current brand
-func LastCommit() (Sha, error) {
+// CurrentCommit return the current commit SHA
+// @todo this probably breaks in detached head...
+func CurrentCommit() (Sha, error) {
 	currentBranch, err := CurrentBranch()
 	if err != nil {
 		return Sha{}, err
@@ -78,7 +80,7 @@ func LastCommit() (Sha, error) {
 }
 
 func PreviousCommits() ([]Sha, error) {
-	previousCommit, err := LastCommit()
+	previousCommit, err := CurrentCommit()
 	if err != nil {
 		return nil, err
 	}
