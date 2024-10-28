@@ -22,6 +22,15 @@ func RestoreStaged(path string) error {
 	if !ok {
 		return fmt.Errorf("file %s not found in index", path)
 	}
+	if f.commit == nil {
+		// if the file is not commited at all, the correct behaviour of staged
+		// is to simply remove the file form the index such that it is no longer
+		// being tracked
+		if err := idx.Rm(path); err != nil {
+			return err
+		}
+		return idx.Write()
+	}
 	item, err := newItem(f.wd.Finfo, f.commit.Sha, f.path)
 	if err != nil {
 		return err
