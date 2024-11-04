@@ -49,6 +49,9 @@ func IsIgnored(path string, rules [][]byte) bool {
 		}
 		if v[len(v)-1] == '/' {
 			dirMatch = true
+			if v[0] != '/' {
+				v = append([]byte{'/'}, v...)
+			}
 		}
 
 		// check for suffix match
@@ -60,7 +63,7 @@ func IsIgnored(path string, rules [][]byte) bool {
 		}
 
 		if dirMatch {
-			if path[len(path)-1] == '/' {
+			if bytes.Equal([]byte(path), v) {
 				return true
 			}
 		}
