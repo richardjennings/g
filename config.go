@@ -1,6 +1,7 @@
 package g
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,9 +19,23 @@ const (
 	DefaultEditor             = "vim"
 	DefaultPackedRefsFile     = "info/refs"
 	DefaultPackfileDirectory  = "pack"
+	DefaultGitIgnoreFileName  = ".gitignore"
 )
 
-var config Cnf
+var config = &Cnf{
+	GitDirectory:       DefaultGitDirectory,
+	Path:               DefaultPath,
+	HeadFile:           DefaultHeadFile,
+	IndexFile:          DefaultIndexFile,
+	ObjectsDirectory:   DefaultObjectsDirectory,
+	RefsDirectory:      DefaultRefsDirectory,
+	RefsHeadsDirectory: DefaultRefsHeadsDirectory,
+	PackedRefsFile:     DefaultPackedRefsFile,
+	PackfileDirectory:  DefaultPackfileDirectory,
+	DefaultBranch:      DefaultBranchName,
+	Editor:             DefaultEditor,
+	GitIgnoreFileName:  DefaultGitIgnoreFileName,
+}
 
 type (
 	Cnf struct {
@@ -39,9 +54,10 @@ type (
 		PackedRefsFile     string
 		PackfileDirectory  string
 		DefaultBranch      string
-		GitIgnore          []string
+		GitIgnore          [][]byte
 		Editor             string
 		EditorArgs         []string
+		GitIgnoreFileName  string
 	}
 	Opt func(m *Cnf) error
 )
@@ -65,35 +81,33 @@ func WithGitDirectory(name string) Opt {
 }
 
 func Configure(opts ...Opt) error {
-	c := &Cnf{
-		GitDirectory:       DefaultGitDirectory,
-		Path:               DefaultPath,
-		HeadFile:           DefaultHeadFile,
-		IndexFile:          DefaultIndexFile,
-		ObjectsDirectory:   DefaultObjectsDirectory,
-		RefsDirectory:      DefaultRefsDirectory,
-		RefsHeadsDirectory: DefaultRefsHeadsDirectory,
-		PackedRefsFile:     DefaultPackedRefsFile,
-		PackfileDirectory:  DefaultPackfileDirectory,
-		DefaultBranch:      DefaultBranchName,
-		Editor:             DefaultEditor,
-		GitIgnore: []string{ //@todo read from .gitignore
-			".idea/",
-		},
-	}
+
 	for _, opt := range opts {
-		if err := opt(c); err != nil {
+		if err := opt(config); err != nil {
 			return err
 		}
 	}
-	if c.Path == "" {
+	if config.Path == DefaultPath {
 		p, err := filepath.Abs(DefaultPath)
 		if err != nil {
 			return err
 		}
-		c.Path = p
+		config.Path = p
 	}
-	config = *c
+
+	// read .gitignore
+	// @todo there can be multiple, and some of the rules are relative to those
+	// files ...
+	config.GitIgnore = make([][]byte, 0)
+	file, err := os.Open(config.GitIgnoreFileName)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = file.Close() }()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		config.GitIgnore = append(config.GitIgnore, scanner.Bytes())
+	}
 	return nil
 }
 
