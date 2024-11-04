@@ -45,6 +45,7 @@ func TestIsIgnored(t *testing.T) {
 		// match at any level below the .gitignore level.
 		{Pattern: "/a", Path: "/a", Expect: true},
 		{Pattern: "a", Path: "/a", Expect: true},
+		{Pattern: "/a/", Path: "/b/", Expect: false},
 		{Pattern: "a", Path: "/b/a", Expect: true},
 		{Pattern: "a", Path: "/c/b/a", Expect: true},
 		{Pattern: "/a/b", Path: "/a/b", Expect: true},
