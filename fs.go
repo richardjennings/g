@@ -160,7 +160,7 @@ func Ls(path string) ([]*FileStatus, error) {
 			return nil
 		}
 		// do not add ignored files
-		if !IsIgnored(path) {
+		if !IsIgnored(path, config.GitIgnore) {
 			files = append(files, &FileStatus{
 				path: strings.TrimPrefix(path, WorkingDirectory()),
 				wd: &fileInfo{
