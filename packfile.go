@@ -1,6 +1,7 @@
 package g
 
 import (
+	"bytes"
 	"compress/zlib"
 	"encoding/binary"
 	"errors"
@@ -142,20 +143,28 @@ func readFanout(fh *os.File) ([256]uint32, error) {
 }
 
 func findObjectName(items uint32, fh *os.File, sha Sha) (uint32, bool, error) {
-	var hash [20]byte
-	// should be an efficiently implemented binary search,
-	// for now a blunt force string trauma
-	for i := uint32(0); i < items; i++ {
-		if err := binary.Read(fh, binary.BigEndian, &hash); err != nil {
-			return i, false, fmt.Errorf("reading object name at index %d: %w", i, err)
+	if items == 0 {
+		return 0, false, nil
+	}
+	// read all SHA hashes in this bucket into memory for binary search
+	buf := make([]byte, items*20)
+	if _, err := io.ReadFull(fh, buf); err != nil {
+		return 0, false, fmt.Errorf("reading object names: %w", err)
+	}
+	// binary search - pack idx entries are sorted by SHA
+	target := sha.hash
+	lo, hi := uint32(0), items
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		h := buf[mid*20 : mid*20+20]
+		if bytes.Compare(h, target[:]) < 0 {
+			lo = mid + 1
+		} else {
+			hi = mid
 		}
-		h, err := NewSha(hash[:])
-		if err != nil {
-			return i, false, fmt.Errorf("parsing object name at index %d: %w", i, err)
-		}
-		if h.AsHexString() == sha.AsHexString() {
-			return i, true, nil
-		}
+	}
+	if lo < items && bytes.Equal(buf[lo*20:lo*20+20], target[:]) {
+		return lo, true, nil
 	}
 	return 0, false, nil
 }
