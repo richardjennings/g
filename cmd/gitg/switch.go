@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/richardjennings/g"
 	"github.com/spf13/cobra"
 )
@@ -21,8 +24,9 @@ func SwitchBranch(name string) error {
 	if err != nil {
 		return err
 	}
-	// @todo print out errFiles
-	_ = errFiles
+	if len(errFiles) > 0 {
+		return fmt.Errorf("error: The following untracked working tree files would be overwritten by checkout:\n\t%s\nPlease move or remove them before you switch branches.", strings.Join(errFiles, "\n\t"))
+	}
 	return nil
 }
 
