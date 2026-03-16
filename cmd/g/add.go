@@ -21,12 +21,12 @@ var addCmd = &cobra.Command{
 
 // Add adds one or more file paths to the Index.
 func Add(paths ...string) error {
-	idx, err := g.ReadIndex()
+	idx, err := repo.Index()
 	if err != nil {
 		return err
 	}
 	// get working directory files with idx status
-	wdFiles, err := g.FsStatus(g.Path())
+	wdFiles, err := repo.Status()
 	if err != nil {
 		return err
 	}

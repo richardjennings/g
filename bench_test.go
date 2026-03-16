@@ -136,11 +136,6 @@ func BenchmarkNewSha(b *testing.B) {
 // ---------------------------------------------------------------------------
 
 func BenchmarkObjectTree(b *testing.B) {
-	// Configure must be called so WorkingDirectory() returns a known prefix.
-	if err := Configure(WithPath("/bench")); err != nil {
-		b.Fatal(err)
-	}
-
 	buildFiles := func(n int) []*FileStatus {
 		files := make([]*FileStatus, 0, n)
 		dummySha := Sha{set: true} // zero-valued hash is fine for structure benchmark
@@ -166,7 +161,7 @@ func BenchmarkObjectTree(b *testing.B) {
 		files := buildFiles(n)
 		b.Run(fmt.Sprintf("files_%d", n), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_ = ObjectTree(files)
+				_ = ObjectTree(files, "")
 			}
 		})
 	}

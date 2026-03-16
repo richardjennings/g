@@ -8,15 +8,13 @@ import (
 var initCmd = &cobra.Command{
 	Use: "init",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := configure(); err != nil {
-			return err
-		}
-		return Init()
+		var err error
+		repo, err = g.Init(
+			g.WithGitDirectory(gitDirectoryFlag),
+			g.WithPath(pathFlag),
+		)
+		return err
 	},
-}
-
-func Init() error {
-	return g.Init()
 }
 
 func init() {

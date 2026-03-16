@@ -22,6 +22,8 @@ const (
 	DefaultGitIgnoreFileName  = ".gitignore"
 )
 
+// config and defaultRepo are the global bridge used during migration.
+// They will be removed once all callers use *Repository directly.
 var config = &Cnf{
 	GitDirectory:       DefaultGitDirectory,
 	Path:               DefaultPath,
@@ -37,15 +39,12 @@ var config = &Cnf{
 	GitIgnoreFileName:  DefaultGitIgnoreFileName,
 }
 
+var defaultRepo = &Repository{cnf: config}
+
 type (
 	Cnf struct {
-		// GitDirector configures where the name of the git directory
-		// This is usually .git
-		GitDirectory string
-		// Path configures where the Git Directory to interact with is
-		// relative to the present working directory. This is usually .
-		Path string
-
+		GitDirectory       string
+		Path               string
 		HeadFile           string
 		IndexFile          string
 		ObjectsDirectory   string
@@ -80,8 +79,8 @@ func WithGitDirectory(name string) Opt {
 	}
 }
 
+// Configure sets up the global config. Deprecated: use Open() instead.
 func Configure(opts ...Opt) error {
-
 	for _, opt := range opts {
 		if err := opt(config); err != nil {
 			return err
@@ -96,11 +95,10 @@ func Configure(opts ...Opt) error {
 	}
 
 	// read .gitignore
-	// @todo there can be multiple, and some of the rules are relative to those
-	// files ...
 	config.GitIgnore = make([][]byte, 0)
 	file, err := os.Open(config.GitIgnoreFileName)
 	if err != nil {
+		defaultRepo = &Repository{cnf: config}
 		return nil
 	}
 	defer func() { _ = file.Close() }()
@@ -108,63 +106,29 @@ func Configure(opts ...Opt) error {
 	for scanner.Scan() {
 		config.GitIgnore = append(config.GitIgnore, scanner.Bytes())
 	}
+	defaultRepo = &Repository{cnf: config}
 	return nil
 }
 
-func Path() string {
-	return config.Path
-}
+// Free-function shims — delegate to defaultRepo during migration.
 
-func GitPath() string {
-	return filepath.Join(config.Path, config.GitDirectory)
-}
-
-func ObjectPath() string {
-	return filepath.Join(config.Path, config.GitDirectory, config.ObjectsDirectory)
-}
-
-func WorkingDirectory() string {
-	return config.Path + string(filepath.Separator)
-}
-
-func IndexFilePath() string {
-	return filepath.Join(config.Path, config.GitDirectory, config.IndexFile)
-}
-
-func RefsDirectory() string {
-	return filepath.Join(config.Path, config.GitDirectory, config.RefsDirectory)
-}
-
-func RefsHeadPrefix() string {
-	return filepath.Join(config.RefsDirectory, config.RefsHeadsDirectory) + string(os.PathSeparator)
-}
-
-func RefsHeadsDirectory() string {
-	return filepath.Join(config.Path, config.GitDirectory, config.RefsDirectory, config.RefsHeadsDirectory)
-}
-
-func PackedRefsFile() string {
-	return filepath.Join(config.Path, config.GitDirectory, config.PackedRefsFile)
-}
-
-func ObjectPackfileDirectory() string {
-	return filepath.Join(config.Path, config.GitDirectory, config.ObjectsDirectory, config.PackfileDirectory)
-}
-
-func GitHeadPath() string {
-	return filepath.Join(config.Path, config.GitDirectory, config.HeadFile)
-}
+func Path() string                       { return defaultRepo.Path() }
+func GitPath() string                    { return defaultRepo.gitPath() }
+func ObjectPath() string                 { return defaultRepo.objectPath() }
+func WorkingDirectory() string           { return defaultRepo.workingDirectory() }
+func IndexFilePath() string              { return defaultRepo.indexFilePath() }
+func RefsDirectory() string              { return defaultRepo.refsDirectory() }
+func RefsHeadPrefix() string             { return defaultRepo.refsHeadPrefix() }
+func RefsHeadsDirectory() string         { return defaultRepo.refsHeadsDirectory() }
+func PackedRefsFile() string             { return defaultRepo.packedRefsFile() }
+func ObjectPackfileDirectory() string    { return defaultRepo.objectPackfileDirectory() }
+func GitHeadPath() string                { return defaultRepo.gitHeadPath() }
+func DefaultBranch() string              { return defaultRepo.defaultBranch() }
+func Editor() (string, []string)         { return defaultRepo.editor() }
+func EditorFile() string                 { return defaultRepo.editorFile() }
 
 func Pager() (string, []string) {
 	return "/usr/bin/less", []string{"-X", "-F"}
-}
-
-func Editor() (string, []string) {
-	return config.Editor, config.EditorArgs
-}
-
-func EditorFile() string {
-	return fmt.Sprintf("%s/COMMIT_EDITMSG", GitPath())
 }
 
 func AuthorName() string {
@@ -195,6 +159,5 @@ func CommitterEmail() string {
 	return AuthorEmail()
 }
 
-func DefaultBranch() string {
-	return config.DefaultBranch
-}
+// Unused import guard for fmt — used by EditorFile shim via defaultRepo.
+var _ = fmt.Sprintf

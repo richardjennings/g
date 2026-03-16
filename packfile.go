@@ -58,11 +58,12 @@ var PackFileReadCloserOfsDelta = func(path string, offset int64) func() (io.Read
 	}
 }
 
-func lookupInPackfiles(sha Sha) (*Object, error) {
+func (r *Repository) lookupInPackfiles(sha Sha) (*Object, error) {
 	var packFiles []string
+	packDir := r.objectPackfileDirectory()
 	// find the available pack files
 	if err := filepath.Walk(
-		ObjectPackfileDirectory(),
+		packDir,
 		func(path string, info os.FileInfo, err error) error {
 			if info == nil {
 				return nil
@@ -81,16 +82,19 @@ func lookupInPackfiles(sha Sha) (*Object, error) {
 	}
 	// check each pack file index for the sha
 	for _, v := range packFiles {
-		offset, found, err := findOffsetInIdx(sha, filepath.Join(ObjectPackfileDirectory(), fmt.Sprintf("pack-%s.idx", v)))
+		offset, found, err := findOffsetInIdx(sha, filepath.Join(packDir, fmt.Sprintf("pack-%s.idx", v)))
 		if err != nil {
 			return nil, fmt.Errorf("searching pack index %s: %w", v, err)
 		}
 		if found {
-			return findObjectInPack(offset, filepath.Join(ObjectPackfileDirectory(), fmt.Sprintf("pack-%s.pack", v)), sha)
+			return findObjectInPack(offset, filepath.Join(packDir, fmt.Sprintf("pack-%s.pack", v)), sha)
 		}
 	}
 	return nil, nil
 }
+
+// lookupInPackfiles is a free-function shim that delegates to defaultRepo.
+func lookupInPackfiles(sha Sha) (*Object, error) { return defaultRepo.lookupInPackfiles(sha) }
 
 func readIdxMagic(fh *os.File) error {
 	magic := make([]byte, 4)

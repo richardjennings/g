@@ -16,13 +16,13 @@ func mustSha(t *testing.T, hex string) Sha {
 	return sha
 }
 
+const testWorkingDir = "/test/"
+
 // helper to build a FileStatus with the given path and index sha.
-// The path stored is the full path including the WorkingDirectory prefix,
-// matching how real FileStatus values are constructed.
 func makeFileStatus(t *testing.T, relativePath string, shaHex string) *FileStatus {
 	t.Helper()
 	return &FileStatus{
-		path: WorkingDirectory() + relativePath,
+		path: testWorkingDir + relativePath,
 		index: &fileInfo{
 			Sha: mustSha(t, shaHex),
 		},
@@ -30,23 +30,13 @@ func makeFileStatus(t *testing.T, relativePath string, shaHex string) *FileStatu
 }
 
 func TestObjectTree(t *testing.T) {
-	// Save and restore the global config after the test.
-	origConfig := *config
-	t.Cleanup(func() {
-		*config = origConfig
-	})
-
-	if err := Configure(WithPath("/test")); err != nil {
-		t.Fatalf("Configure: %v", err)
-	}
-
 	sha1Hex := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	sha2Hex := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	sha3Hex := "cccccccccccccccccccccccccccccccccccccccc"
 	sha4Hex := "dddddddddddddddddddddddddddddddddddddddd"
 
 	t.Run("empty file list", func(t *testing.T) {
-		root := ObjectTree(nil)
+		root := ObjectTree(nil, testWorkingDir)
 		if root.Typ != ObjectTypeTree {
 			t.Errorf("root type = %d, want ObjectTypeTree (%d)", root.Typ, ObjectTypeTree)
 		}
@@ -59,7 +49,7 @@ func TestObjectTree(t *testing.T) {
 		files := []*FileStatus{
 			makeFileStatus(t, "readme.txt", sha1Hex),
 		}
-		root := ObjectTree(files)
+		root := ObjectTree(files, testWorkingDir)
 
 		if root.Typ != ObjectTypeTree {
 			t.Errorf("root type = %d, want ObjectTypeTree", root.Typ)
@@ -83,7 +73,7 @@ func TestObjectTree(t *testing.T) {
 		files := []*FileStatus{
 			makeFileStatus(t, "dir/file.txt", sha1Hex),
 		}
-		root := ObjectTree(files)
+		root := ObjectTree(files, testWorkingDir)
 
 		if len(root.Objects) != 1 {
 			t.Fatalf("root children = %d, want 1 (the dir tree)", len(root.Objects))
@@ -112,7 +102,7 @@ func TestObjectTree(t *testing.T) {
 			makeFileStatus(t, "src/a.go", sha1Hex),
 			makeFileStatus(t, "src/b.go", sha2Hex),
 		}
-		root := ObjectTree(files)
+		root := ObjectTree(files, testWorkingDir)
 
 		if len(root.Objects) != 1 {
 			t.Fatalf("root children = %d, want 1 (single src tree)", len(root.Objects))
@@ -142,7 +132,7 @@ func TestObjectTree(t *testing.T) {
 		files := []*FileStatus{
 			makeFileStatus(t, "a/b/file.txt", sha1Hex),
 		}
-		root := ObjectTree(files)
+		root := ObjectTree(files, testWorkingDir)
 
 		if len(root.Objects) != 1 {
 			t.Fatalf("root children = %d, want 1", len(root.Objects))
@@ -183,7 +173,7 @@ func TestObjectTree(t *testing.T) {
 			makeFileStatus(t, "dir/other.txt", sha3Hex),
 			makeFileStatus(t, "deep/sub/leaf.txt", sha4Hex),
 		}
-		root := ObjectTree(files)
+		root := ObjectTree(files, testWorkingDir)
 
 		// root should have 3 children: root.txt blob, dir tree, deep tree
 		if len(root.Objects) != 3 {

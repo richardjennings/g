@@ -76,8 +76,8 @@ func (c Commit) String() string {
 }
 
 // ObjectTree creates a Tree Object with child Objects representing the files and
-// paths in the provided files.
-func ObjectTree(files []*FileStatus) *Object {
+// paths in the provided files. The workingDir prefix is trimmed from file paths.
+func ObjectTree(files []*FileStatus, workingDir string) *Object {
 	root := &Object{
 		Typ: ObjectTypeTree,
 	}
@@ -86,7 +86,7 @@ func ObjectTree(files []*FileStatus) *Object {
 	// mp holds a cache of file paths to objectTree nodes
 	mp := make(map[string]*Object)
 	for _, v := range files {
-		parts := strings.Split(strings.TrimPrefix(v.path, WorkingDirectory()), string(filepath.Separator))
+		parts := strings.Split(strings.TrimPrefix(v.path, workingDir), string(filepath.Separator))
 		if len(parts) == 1 {
 			root.Objects = append(root.Objects, &Object{Typ: ObjectTypeBlob, Path: v.path, Sha: v.index.Sha})
 			continue // top level file
@@ -132,26 +132,49 @@ func (o *Object) FlattenTree() []*FileStatus {
 	return objFiles
 }
 
-func objectPath(sha Sha) string {
+// ---------------------------------------------------------------------------
+// Repository methods
+// ---------------------------------------------------------------------------
+
+// objectFilePath builds the full filesystem path for a loose object.
+// Named objectFilePath to avoid collision with Repository.objectPath (the
+// base objects directory).
+func (r *Repository) objectFilePath(sha Sha) string {
 	h := sha.AsHexString()
-	return filepath.Join(ObjectPath(), h[0:2], h[2:])
+	return filepath.Join(r.objectPath(), h[0:2], h[2:])
 }
 
-func ReadObject(sha Sha) (*Object, error) {
+func (r *Repository) objectReadCloser(sha []byte) func() (io.ReadCloser, error) {
+	return func() (io.ReadCloser, error) {
+		path := filepath.Join(r.objectPath(), string(sha[0:2]), string(sha[2:]))
+		f, err := os.OpenFile(path, os.O_RDONLY, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("opening object file %s: %w", path, err)
+		}
+		defer func() { _ = f.Close() }()
+		z, err := zlib.NewReader(f)
+		if err != nil {
+			return nil, fmt.Errorf("decompressing object %s: %w", path, err)
+		}
+		return z, nil
+	}
+}
+
+func (r *Repository) readObject(sha Sha) (*Object, error) {
 	var err error
 	var o *Object
 
 	// check if a loose file or in a packfile
-	if _, err := os.Stat(objectPath(sha)); err != nil {
+	if _, err := os.Stat(r.objectFilePath(sha)); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return lookupInPackfiles(sha)
+			return r.lookupInPackfiles(sha)
 		} else {
 			return nil, fmt.Errorf("stat object %s: %w", sha, err)
 		}
 	}
 
 	o = &Object{Sha: sha}
-	o.ReadCloser = ObjectReadCloser(sha.AsHexBytes())
+	o.ReadCloser = r.objectReadCloser(sha.AsHexBytes())
 	z, err := o.ReadCloser()
 	if err != nil {
 		return o, fmt.Errorf("opening object %s: %w", sha, err)
@@ -183,25 +206,8 @@ func ReadObject(sha Sha) (*Object, error) {
 	return o, nil
 }
 
-func ObjectReadCloser(sha []byte) func() (io.ReadCloser, error) {
-	return func() (io.ReadCloser, error) {
-		path := filepath.Join(ObjectPath(), string(sha[0:2]), string(sha[2:]))
-		f, err := os.OpenFile(path, os.O_RDONLY, 0644)
-		if err != nil {
-			return nil, fmt.Errorf("opening object file %s: %w", path, err)
-		}
-		defer func() { _ = f.Close() }()
-		r, err := zlib.NewReader(f)
-		if err != nil {
-			return nil, fmt.Errorf("decompressing object %s: %w", path, err)
-		}
-		return r, nil
-	}
-}
-
-// ReadObjectTree reads an object from the object store
-func ReadObjectTree(sha Sha) (*Object, error) {
-	obj, err := ReadObject(sha)
+func (r *Repository) readObjectTree(sha Sha) (*Object, error) {
+	obj, err := r.readObject(sha)
 	if err != nil {
 		return nil, fmt.Errorf("reading object %s: %w", sha, err)
 	}
@@ -214,7 +220,7 @@ func ReadObjectTree(sha Sha) (*Object, error) {
 		if err != nil {
 			return obj, fmt.Errorf("reading commit %s: %w", sha, err)
 		}
-		co, err := ReadObjectTree(commit.Tree)
+		co, err := r.readObjectTree(commit.Tree)
 		if err != nil {
 			return nil, fmt.Errorf("reading commit tree %s: %w", commit.Tree, err)
 		}
@@ -230,7 +236,7 @@ func ReadObjectTree(sha Sha) (*Object, error) {
 			if err != nil {
 				return obj, fmt.Errorf("parsing tree item sha: %w", err)
 			}
-			o, err := ReadObjectTree(sha)
+			o, err := r.readObjectTree(sha)
 			if err != nil {
 				return nil, fmt.Errorf("reading tree item %s: %w", v.Path, err)
 			}
@@ -249,6 +255,207 @@ func ReadObjectTree(sha Sha) (*Object, error) {
 	}
 
 }
+
+// ReadCommit reads a commit object by SHA. Public — used by CLI (log.go).
+func (r *Repository) ReadCommit(sha Sha) (*Commit, error) {
+	o, err := r.readObject(sha)
+	if err != nil {
+		return nil, fmt.Errorf("reading object %s: %w", sha, err)
+	}
+	return readCommit(o)
+}
+
+func (r *Repository) committedFiles(sha Sha) ([]*FileStatus, error) {
+	obj, err := r.readObjectTree(sha)
+	if err != nil {
+		return nil, fmt.Errorf("reading object tree %s: %w", sha, err)
+	}
+	return obj.FlattenTree(), nil
+}
+
+func (r *Repository) committedFilesForBranchHead(name string) (*FfileSet, error) {
+	// get all files in new commit
+	commitSha, err := r.Head(name)
+	if err != nil {
+		return nil, fmt.Errorf("reading head sha for %s: %w", name, err)
+	}
+	fs, err := r.committedFiles(commitSha)
+	if err != nil {
+		return nil, fmt.Errorf("reading committed files for %s: %w", name, err)
+	}
+	return NewFfileSet(fs, nil, nil)
+}
+
+// writeObject writes an object to the object store
+func (r *Repository) writeObject(header []byte, content []byte, contentFile string, path string) (Sha, error) {
+	var f *os.File
+	var err error
+	buf := bytes.NewBuffer(nil)
+	h := sha1.New()
+	z := zlib.NewWriter(buf)
+	w := io.MultiWriter(h, z)
+
+	if _, err := w.Write(header); err != nil {
+		return Sha{}, fmt.Errorf("writing object header: %w", err)
+	}
+	if len(content) > 0 {
+		if _, err := w.Write(content); err != nil {
+			return Sha{}, fmt.Errorf("writing object content: %w", err)
+		}
+	}
+	if contentFile != "" {
+		f, err = os.Open(contentFile)
+		if err != nil {
+			return Sha{}, fmt.Errorf("opening content file %s: %w", contentFile, err)
+		}
+		if _, err := io.Copy(w, f); err != nil {
+			return Sha{}, fmt.Errorf("copying content file %s: %w", contentFile, err)
+		}
+		if err := f.Close(); err != nil {
+			return Sha{}, fmt.Errorf("closing content file %s: %w", contentFile, err)
+		}
+	}
+
+	sha, err := NewSha(h.Sum(nil))
+	if err != nil {
+		return Sha{}, fmt.Errorf("creating sha from hash: %w", err)
+	}
+	path = filepath.Join(path, sha.AsHexString()[:2])
+	// create object sha[:2] directory if needed
+	if err := os.MkdirAll(path, 0744); err != nil {
+		return Sha{}, fmt.Errorf("creating object directory %s: %w", path, err)
+	}
+	path = filepath.Join(path, sha.AsHexString()[2:])
+	// if object exists with Sha already we can avoid writing again
+	_, err = os.Stat(path)
+	if err == nil || !errors.Is(err, fs.ErrNotExist) {
+		// file exists
+		return sha, err
+	}
+	if err := z.Close(); err != nil {
+		return Sha{}, fmt.Errorf("closing zlib writer: %w", err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0655); err != nil {
+		return Sha{}, fmt.Errorf("writing object file %s: %w", path, err)
+	}
+	return sha, nil
+}
+
+// writeBlob writes a file to the object store as a blob and returns
+// a Blob Object representation.
+func (r *Repository) writeBlob(path string) (*Object, error) {
+	path = filepath.Join(r.Path(), path)
+	finfo, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat blob %s: %w", path, err)
+	}
+	header := []byte(fmt.Sprintf("blob %d%s", finfo.Size(), string(byte(0))))
+	sha, err := r.writeObject(header, nil, path, r.objectPath())
+	if err != nil {
+		return nil, fmt.Errorf("writing blob %s: %w", path, err)
+	}
+	return &Object{Sha: sha, Path: path, Typ: ObjectTypeBlob}, nil
+}
+
+func (r *Repository) writeCommit(c *Commit) (Sha, error) {
+	var parentCommits string
+	for _, v := range c.Parents {
+		parentCommits += fmt.Sprintf("parent %s\n", v)
+	}
+	content := []byte(fmt.Sprintf(
+		"tree %s\n%sauthor %s %d +0000\ncommitter %s %d +0000\n\n%s",
+		c.Tree.AsHexString(),
+		parentCommits,
+		c.Author,
+		c.AuthoredTime.Unix(),
+		c.Committer,
+		c.CommittedTime.Unix(),
+		c.Message,
+	))
+	header := []byte(fmt.Sprintf("commit %d%s", len(content), string(byte(0))))
+	sha, err := r.writeObject(header, content, "", r.objectPath())
+	if err != nil {
+		return Sha{}, fmt.Errorf("writing commit object: %w", err)
+	}
+	branch, err := r.Branch()
+	if err != nil {
+		return Sha{}, fmt.Errorf("reading current branch: %w", err)
+	}
+	if err := r.updateBranchHead(branch, sha); err != nil {
+		return Sha{}, fmt.Errorf("updating branch head: %w", err)
+	}
+	return sha, nil
+}
+
+func (r *Repository) writeObjectToWorkingTree(sha Sha, path string) error {
+	obj, err := r.readObject(sha)
+	if err != nil {
+		return fmt.Errorf("reading object %s: %w", sha, err)
+	}
+	rc, err := obj.ReadCloser()
+	if err != nil {
+		return fmt.Errorf("opening object %s: %w", sha, err)
+	}
+	buf := make([]byte, obj.HeaderLength)
+	if _, err := rc.Read(buf); err != nil {
+		return fmt.Errorf("reading object %s header: %w", sha, err)
+	}
+	f, err := os.OpenFile(filepath.Join(r.Path(), path), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0655)
+	if err != nil {
+		return fmt.Errorf("creating file %s: %w", path, err)
+	}
+
+	if _, err := io.Copy(f, rc); err != nil {
+		return fmt.Errorf("writing file %s: %w", path, err)
+	}
+	if err := rc.Close(); err != nil {
+		return fmt.Errorf("closing object reader: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing file %s: %w", path, err)
+	}
+
+	return nil
+}
+
+// writeTreeRecursive recursively resolves child tree Objects then writes.
+func (r *Repository) writeTreeRecursive(o *Object) (Sha, error) {
+	// resolve child tree Objects
+	for i, v := range o.Objects {
+		if v.Typ == ObjectTypeTree {
+			// if the tree only has blobs, write them and then
+			// add the corresponding tree returning the Sha
+			sha, err := r.writeTreeRecursive(v)
+			if err != nil {
+				return Sha{}, fmt.Errorf("writing subtree %s: %w", v.Path, err)
+			}
+			o.Objects[i].Sha = sha
+		}
+	}
+	// write a tree obj with the resolved children
+	return r.writeTreeNode(o)
+}
+
+func (r *Repository) writeTreeNode(o *Object) (Sha, error) {
+	var content []byte
+	var mode string
+	for _, fo := range o.Objects {
+		// @todo add executable support
+		if fo.Typ == ObjectTypeTree {
+			mode = "40000"
+		} else {
+			mode = "100644"
+		}
+		// @todo replace base..
+		content = append(content, []byte(fmt.Sprintf("%s %s%s%s", mode, filepath.Base(fo.Path), string(byte(0)), fo.Sha.AsByteSlice()))...)
+	}
+	header := []byte(fmt.Sprintf("tree %d%s", len(content), string(byte(0))))
+	return r.writeObject(header, content, "", r.objectPath())
+}
+
+// ---------------------------------------------------------------------------
+// Pure free functions (no config dependency)
+// ---------------------------------------------------------------------------
 
 func ReadTree(obj *Object) (*Tree, error) {
 	var err error
@@ -313,14 +520,6 @@ func ReadHeadBytes(r io.ReadCloser, obj *Object) error {
 		return fmt.Errorf("read %d not %d", n, obj.HeaderLength)
 	}
 	return nil
-}
-
-func ReadCommit(sha Sha) (*Commit, error) {
-	o, err := ReadObject(sha)
-	if err != nil {
-		return nil, fmt.Errorf("reading object %s: %w", sha, err)
-	}
-	return readCommit(o)
 }
 
 // The format for a commit object is simple:
@@ -447,190 +646,23 @@ func readCommitter(b []byte, c *Commit) error {
 	return nil
 }
 
-func CommittedFilesForBranchHead(name string) (*FfileSet, error) {
-	// get all files in new commit
-	commitSha, err := HeadSHA(name)
-	if err != nil {
-		return nil, fmt.Errorf("reading head sha for %s: %w", name, err)
-	}
-	fs, err := CommittedFiles(commitSha)
-	if err != nil {
-		return nil, fmt.Errorf("reading committed files for %s: %w", name, err)
-	}
-	return NewFfileSet(fs, nil, nil)
-}
+// ---------------------------------------------------------------------------
+// Free-function shims — delegate to defaultRepo during migration.
+// ---------------------------------------------------------------------------
 
-func CommittedFiles(sha Sha) ([]*FileStatus, error) {
-	obj, err := ReadObjectTree(sha)
-	if err != nil {
-		return nil, fmt.Errorf("reading object tree %s: %w", sha, err)
-	}
-	return obj.FlattenTree(), nil
-}
-
-// WriteTree writes an Object Tree to the object store.
-func (o *Object) WriteTree() (Sha, error) {
-	// resolve child tree Objects
-	for i, v := range o.Objects {
-		if v.Typ == ObjectTypeTree {
-			// if the tree only has blobs, write them and then
-			// add the corresponding tree returning the Sha
-			sha, err := v.WriteTree()
-			if err != nil {
-				return Sha{}, fmt.Errorf("writing subtree %s: %w", v.Path, err)
-			}
-			o.Objects[i].Sha = sha
-		}
-	}
-	// write a tree obj with the resolved children
-	return o.writeTree()
-}
-
-func (o *Object) writeTree() (Sha, error) {
-	var content []byte
-	var mode string
-	for _, fo := range o.Objects {
-		// @todo add executable support
-		if fo.Typ == ObjectTypeTree {
-			mode = "40000"
-		} else {
-			mode = "100644"
-		}
-		// @todo replace base..
-		content = append(content, []byte(fmt.Sprintf("%s %s%s%s", mode, filepath.Base(fo.Path), string(byte(0)), fo.Sha.AsByteSlice()))...)
-	}
-	header := []byte(fmt.Sprintf("tree %d%s", len(content), string(byte(0))))
-	return WriteObject(header, content, "", ObjectPath())
-}
-
-// WriteObject writes an object to the object store
+func objectPath(sha Sha) string                                   { return defaultRepo.objectFilePath(sha) }
+func ObjectReadCloser(sha []byte) func() (io.ReadCloser, error)   { return defaultRepo.objectReadCloser(sha) }
+func ReadObject(sha Sha) (*Object, error)                         { return defaultRepo.readObject(sha) }
+func ReadObjectTree(sha Sha) (*Object, error)                     { return defaultRepo.readObjectTree(sha) }
+func ReadCommit(sha Sha) (*Commit, error)                         { return defaultRepo.ReadCommit(sha) }
+func CommittedFiles(sha Sha) ([]*FileStatus, error)               { return defaultRepo.committedFiles(sha) }
+func CommittedFilesForBranchHead(name string) (*FfileSet, error)   { return defaultRepo.committedFilesForBranchHead(name) }
 func WriteObject(header []byte, content []byte, contentFile string, path string) (Sha, error) {
-	var f *os.File
-	var err error
-	buf := bytes.NewBuffer(nil)
-	h := sha1.New()
-	z := zlib.NewWriter(buf)
-	r := io.MultiWriter(h, z)
-
-	if _, err := r.Write(header); err != nil {
-		return Sha{}, fmt.Errorf("writing object header: %w", err)
-	}
-	if len(content) > 0 {
-		if _, err := r.Write(content); err != nil {
-			return Sha{}, fmt.Errorf("writing object content: %w", err)
-		}
-	}
-	if contentFile != "" {
-		f, err = os.Open(contentFile)
-		if err != nil {
-			return Sha{}, fmt.Errorf("opening content file %s: %w", contentFile, err)
-		}
-		if _, err := io.Copy(r, f); err != nil {
-			return Sha{}, fmt.Errorf("copying content file %s: %w", contentFile, err)
-		}
-		if err := f.Close(); err != nil {
-			return Sha{}, fmt.Errorf("closing content file %s: %w", contentFile, err)
-		}
-	}
-
-	sha, err := NewSha(h.Sum(nil))
-	if err != nil {
-		return Sha{}, fmt.Errorf("creating sha from hash: %w", err)
-	}
-	path = filepath.Join(path, sha.AsHexString()[:2])
-	// create object sha[:2] directory if needed
-	if err := os.MkdirAll(path, 0744); err != nil {
-		return Sha{}, fmt.Errorf("creating object directory %s: %w", path, err)
-	}
-	path = filepath.Join(path, sha.AsHexString()[2:])
-	// if object exists with Sha already we can avoid writing again
-	_, err = os.Stat(path)
-	if err == nil || !errors.Is(err, fs.ErrNotExist) {
-		// file exists
-		return sha, err
-	}
-	if err := z.Close(); err != nil {
-		return Sha{}, fmt.Errorf("closing zlib writer: %w", err)
-	}
-	if err := os.WriteFile(path, buf.Bytes(), 0655); err != nil {
-		return Sha{}, fmt.Errorf("writing object file %s: %w", path, err)
-	}
-	return sha, nil
+	return defaultRepo.writeObject(header, content, contentFile, path)
 }
+func WriteBlob(path string) (*Object, error)                      { return defaultRepo.writeBlob(path) }
+func writeCommit(c *Commit) (Sha, error)                           { return defaultRepo.writeCommit(c) }
+func writeObjectToWorkingTree(sha Sha, path string) error          { return defaultRepo.writeObjectToWorkingTree(sha, path) }
 
-// WriteBlob writes a file to the object store as a blob and returns
-// a Blob Object representation.
-func WriteBlob(path string) (*Object, error) {
-	path = filepath.Join(Path(), path)
-	finfo, err := os.Stat(path)
-	if err != nil {
-		return nil, fmt.Errorf("stat blob %s: %w", path, err)
-	}
-	header := []byte(fmt.Sprintf("blob %d%s", finfo.Size(), string(byte(0))))
-	sha, err := WriteObject(header, nil, path, ObjectPath())
-	if err != nil {
-		return nil, fmt.Errorf("writing blob %s: %w", path, err)
-	}
-	return &Object{Sha: sha, Path: path, Typ: ObjectTypeBlob}, nil
-}
-
-func writeCommit(c *Commit) (Sha, error) {
-	var parentCommits string
-	for _, v := range c.Parents {
-		parentCommits += fmt.Sprintf("parent %s\n", v)
-	}
-	content := []byte(fmt.Sprintf(
-		"tree %s\n%sauthor %s %d +0000\ncommitter %s %d +0000\n\n%s",
-		c.Tree.AsHexString(),
-		parentCommits,
-		c.Author,
-		c.AuthoredTime.Unix(),
-		c.Committer,
-		c.CommittedTime.Unix(),
-		c.Message,
-	))
-	header := []byte(fmt.Sprintf("commit %d%s", len(content), string(byte(0))))
-	sha, err := WriteObject(header, content, "", ObjectPath())
-	if err != nil {
-		return Sha{}, fmt.Errorf("writing commit object: %w", err)
-	}
-	branch, err := CurrentBranch()
-	if err != nil {
-		return Sha{}, fmt.Errorf("reading current branch: %w", err)
-	}
-	if err := UpdateBranchHead(branch, sha); err != nil {
-		return Sha{}, fmt.Errorf("updating branch head: %w", err)
-	}
-	return sha, nil
-}
-
-func writeObjectToWorkingTree(sha Sha, path string) error {
-	obj, err := ReadObject(sha)
-	if err != nil {
-		return fmt.Errorf("reading object %s: %w", sha, err)
-	}
-	r, err := obj.ReadCloser()
-	if err != nil {
-		return fmt.Errorf("opening object %s: %w", sha, err)
-	}
-	buf := make([]byte, obj.HeaderLength)
-	if _, err := r.Read(buf); err != nil {
-		return fmt.Errorf("reading object %s header: %w", sha, err)
-	}
-	f, err := os.OpenFile(filepath.Join(Path(), path), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0655)
-	if err != nil {
-		return fmt.Errorf("creating file %s: %w", path, err)
-	}
-
-	if _, err := io.Copy(f, r); err != nil {
-		return fmt.Errorf("writing file %s: %w", path, err)
-	}
-	if err := r.Close(); err != nil {
-		return fmt.Errorf("closing object reader: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("closing file %s: %w", path, err)
-	}
-
-	return nil
-}
+// WriteTree shim on Object — delegates to defaultRepo.
+func (o *Object) WriteTree() (Sha, error) { return defaultRepo.writeTreeRecursive(o) }

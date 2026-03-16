@@ -26,7 +26,7 @@ func Test_Integration(t *testing.T) {
 	e(Configure(WithPath(dir)), t)
 
 	// init, creating a .git folder
-	e(Init(), t)
+	e(initRepo(), t)
 
 	// commit 'a' to branch 'main'
 	{
@@ -309,7 +309,7 @@ func initTestRepo(t *testing.T) string {
 	t.Setenv("GIT_AUTHOR_EMAIL", "tester@test.com")
 
 	e(Configure(WithPath(dir), WithGitDirectory(".git")), t)
-	e(Init(), t)
+	e(initRepo(), t)
 	return dir
 }
 
@@ -505,7 +505,7 @@ func Test_Init_Idempotent(t *testing.T) {
 	e(Configure(WithPath(dir), WithGitDirectory(".git")), t)
 
 	// first init
-	e(Init(), t)
+	e(initRepo(), t)
 
 	// verify .git directory exists
 	info, err := os.Stat(filepath.Join(dir, ".git"))
@@ -517,7 +517,7 @@ func Test_Init_Idempotent(t *testing.T) {
 	}
 
 	// second init -- should not error
-	e(Init(), t)
+	e(initRepo(), t)
 
 	// verify .git directory still exists and is intact
 	info, err = os.Stat(filepath.Join(dir, ".git"))

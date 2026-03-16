@@ -10,6 +10,7 @@ var (
 	gitDirectoryFlag string
 	pathFlag         string
 	rootCmd          = &cobra.Command{}
+	repo             *g.Repository
 )
 
 func init() {
@@ -18,11 +19,12 @@ func init() {
 }
 
 func configure() error {
-	opts := []g.Opt{
+	var err error
+	repo, err = g.Open(
 		g.WithGitDirectory(gitDirectoryFlag),
 		g.WithPath(pathFlag),
-	}
-	return g.Configure(opts...)
+	)
+	return err
 }
 
 func Execute() {

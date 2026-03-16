@@ -18,6 +18,7 @@ import (
 type (
 	// Index represents the Git Index
 	Index struct {
+		repo   *Repository
 		header *indexHeader
 		items  []*indexItem
 		sig    [20]byte
@@ -145,7 +146,7 @@ func (idx *Index) addFromIndex(f *FileStatus) error {
 }
 
 func (idx *Index) addFromCommit(f *FileStatus) error {
-	finfo, err := os.Stat(filepath.Join(Path(), f.Path()))
+	finfo, err := os.Stat(filepath.Join(idx.repo.Path(), f.Path()))
 	if err != nil {
 		return err
 	}
@@ -160,7 +161,7 @@ func (idx *Index) addFromCommit(f *FileStatus) error {
 }
 
 func (idx *Index) addFromWorkTree(f *FileStatus) error {
-	o, err := WriteBlob(f.Path())
+	o, err := idx.repo.writeBlob(f.Path())
 	if err != nil {
 		return err
 	}
@@ -220,7 +221,7 @@ func (idx *Index) Write() error {
 		return bytes.Compare(idx.items[i].Name, idx.items[j].Name) < 0
 	})
 
-	path := IndexFilePath()
+	path := idx.repo.indexFilePath()
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
 		return fmt.Errorf("opening index for writing: %w", err)
@@ -262,13 +263,20 @@ func (idx *Index) Write() error {
 	return f.Close()
 }
 
-func NewIndex() *Index {
-	return &Index{header: &indexHeader{
-		Sig:        [4]byte{'D', 'I', 'R', 'C'},
-		Version:    2,
-		NumEntries: 0,
-	}}
+// newIndex creates a new empty Index bound to this repository.
+func (r *Repository) newIndex() *Index {
+	return &Index{
+		repo: r,
+		header: &indexHeader{
+			Sig:        [4]byte{'D', 'I', 'R', 'C'},
+			Version:    2,
+			NumEntries: 0,
+		},
+	}
 }
+
+// NewIndex is a free-function shim that delegates to defaultRepo.
+func NewIndex() *Index { return defaultRepo.newIndex() }
 
 func fromIndexItemP(p *indexItemP) *Finfo {
 	f := &Finfo{
@@ -287,37 +295,19 @@ func fromIndexItemP(p *indexItemP) *Finfo {
 	return f
 }
 
-// FsStatus returns a FfileSet containing all files from the index and working directory
-// with the corresponding status.
-func FsStatus(path string) (*FfileSet, error) {
-	idx, err := ReadIndex()
-	if err != nil {
-		return nil, fmt.Errorf("reading index: %w", err)
-	}
-	idxFiles, err := idx.Files()
-	if err != nil {
-		return nil, fmt.Errorf("reading index files: %w", err)
-	}
-	files, err := Ls(path)
-	if err != nil {
-		return nil, fmt.Errorf("listing files: %w", err)
-	}
-	return NewFfileSet(nil, idxFiles, files)
-}
-
-// ReadIndex reads the Git Index into an Index struct
-func ReadIndex() (*Index, error) {
-	path := IndexFilePath()
+// Index reads the Git Index into an Index struct
+func (r *Repository) Index() (*Index, error) {
+	path := r.indexFilePath()
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return NewIndex(), nil
+			return r.newIndex(), nil
 		}
 		return nil, fmt.Errorf("opening index: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	// populate indexHeader
-	index := &Index{header: &indexHeader{}}
+	index := &Index{repo: r, header: &indexHeader{}}
 	if err := binary.Read(f, binary.BigEndian, index.header); err != nil {
 		return nil, fmt.Errorf("reading index header: %w", err)
 	}
@@ -349,3 +339,6 @@ func ReadIndex() (*Index, error) {
 
 	return index, nil
 }
+
+// ReadIndex is a free-function shim that delegates to defaultRepo.
+func ReadIndex() (*Index, error) { return defaultRepo.Index() }

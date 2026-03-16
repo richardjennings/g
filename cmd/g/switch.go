@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/richardjennings/g"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +19,7 @@ var switchCmd = &cobra.Command{
 }
 
 func SwitchBranch(name string) error {
-	errFiles, err := g.SwitchBranch(name)
+	errFiles, err := repo.Switch(name)
 	if err != nil {
 		return err
 	}

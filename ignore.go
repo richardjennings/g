@@ -6,13 +6,13 @@ import (
 	"strings"
 )
 
-func IsIgnored(path string, rules [][]byte) bool {
+func IsIgnored(path string, rules [][]byte, basePath string, gitDirectory string) bool {
 
 	// make the path relative
-	path = strings.TrimPrefix(path, Path())
+	path = strings.TrimPrefix(path, basePath)
 
 	// ignore the git directory regardless
-	if strings.HasPrefix(path, fmt.Sprintf("/%s/", config.GitDirectory)) {
+	if strings.HasPrefix(path, fmt.Sprintf("/%s/", gitDirectory)) {
 		return true
 	}
 
