@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/richardjennings/g"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +13,7 @@ var restoreCmd = &cobra.Command{
 		if err := configure(); err != nil {
 			return err
 		}
-		return g.Restore(args[0], restoreStaged)
+		return repo.Restore(args[0], restoreStaged)
 	},
 }
 

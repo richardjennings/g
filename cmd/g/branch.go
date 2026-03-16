@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/richardjennings/g"
 	"github.com/spf13/cobra"
 	"io"
 	"os"
@@ -38,27 +37,27 @@ const DeleteBranchCheckedOutErrFmt = "error: Cannot delete branch '%s' checked o
 func DeleteBranch(name string) error {
 	// Delete Branch removes any branch that is not checked out
 	// @todo more correct semantics
-	currentBranch, err := g.CurrentBranch()
+	currentBranch, err := repo.Branch()
 	if err != nil {
 		return err
 	}
 	if name == currentBranch {
-		return fmt.Errorf(DeleteBranchCheckedOutErrFmt, name, g.Path())
+		return fmt.Errorf(DeleteBranchCheckedOutErrFmt, name, repo.Path())
 	}
-	return g.DeleteBranch(name)
+	return repo.DeleteBranch(name)
 }
 
 func CreateBranch(name string) error {
-	return g.CreateBranch(name)
+	return repo.CreateBranch(name)
 }
 
 func ListBranches(o io.Writer) error {
 	var err error
-	currentBranch, err := g.CurrentBranch()
+	currentBranch, err := repo.Branch()
 	if err != nil {
 		return err
 	}
-	branches, err := g.ListBranches()
+	branches, err := repo.Branches()
 	if err != nil {
 		return err
 	}

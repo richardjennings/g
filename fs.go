@@ -149,8 +149,8 @@ func (wds WDStatus) StatusString() string {
 	}
 }
 
-// Ls recursively lists files in path that are not ignored
-func Ls(path string) ([]*FileStatus, error) {
+// ls recursively lists files in path that are not ignored
+func (r *Repository) ls(path string) ([]*FileStatus, error) {
 	var files []*FileStatus
 	if err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -160,9 +160,9 @@ func Ls(path string) ([]*FileStatus, error) {
 			return nil
 		}
 		// do not add ignored files
-		if !IsIgnored(path, config.GitIgnore) {
+		if !IsIgnored(path, r.cnf.GitIgnore, r.Path(), r.cnf.GitDirectory) {
 			files = append(files, &FileStatus{
-				path: strings.TrimPrefix(path, WorkingDirectory()),
+				path: strings.TrimPrefix(path, r.workingDirectory()),
 				wd: &fileInfo{
 					Finfo: info,
 				},
@@ -174,6 +174,9 @@ func Ls(path string) ([]*FileStatus, error) {
 	}
 	return files, nil
 }
+
+// Ls is a free-function shim that delegates to defaultRepo.
+func Ls(path string) ([]*FileStatus, error) { return defaultRepo.ls(path) }
 
 func (fi *Finfo) Name() string {
 	return fi.NName

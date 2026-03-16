@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/richardjennings/g"
 	"github.com/spf13/cobra"
 )
 
@@ -25,12 +24,16 @@ var lsFilesCmd = &cobra.Command{
 
 // LsFiles returns a list of files in the index
 func LsFiles() ([]string, error) {
-	idx, err := g.ReadIndex()
+	idx, err := repo.Index()
+	if err != nil {
+		return nil, err
+	}
+	idxFiles, err := idx.Files()
 	if err != nil {
 		return nil, err
 	}
 	var files []string
-	for _, v := range idx.Files() {
+	for _, v := range idxFiles {
 		files = append(files, v.Path())
 	}
 	return files, nil

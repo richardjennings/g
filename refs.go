@@ -11,52 +11,57 @@ import (
 	"strings"
 )
 
-// UpdateHead writes branch name as a reference in the Git HEAD file
-func UpdateHead(branch string) error {
-	return os.WriteFile(GitHeadPath(), []byte(fmt.Sprintf("ref: refs/heads/%s\n", branch)), 0655)
+// --- Repository methods ---
+
+// updateHead writes branch name as a reference in the Git HEAD file.
+func (r *Repository) updateHead(branch string) error {
+	return os.WriteFile(r.gitHeadPath(), []byte(fmt.Sprintf("ref: refs/heads/%s\n", branch)), 0655)
 }
 
-// UpdateBranchHead updates the sha hash pointed to by a branch
-func UpdateBranchHead(branch string, sha Sha) error {
-	path := filepath.Join(RefsHeadsDirectory(), branch)
+// updateBranchHead updates the sha hash pointed to by a branch.
+func (r *Repository) updateBranchHead(branch string, sha Sha) error {
+	path := filepath.Join(r.refsHeadsDirectory(), branch)
 	return os.WriteFile(path, []byte(sha.AsHexString()+"\n"), 0755)
 }
 
-// HeadSHA returns the hash pointed to by a branch
-func HeadSHA(currentBranch string) (Sha, error) {
-	path := filepath.Join(RefsHeadsDirectory(), currentBranch)
+// Head returns the hash pointed to by a branch.
+func (r *Repository) Head(currentBranch string) (Sha, error) {
+	path := filepath.Join(r.refsHeadsDirectory(), currentBranch)
 	bytes, err := os.ReadFile(path)
 	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		// the branch does not exist in refs/heads when there are no commits
 		// lets check packed-refs
-		branchMap, err := packedrefs()
+		branchMap, err := r.packedrefs()
 		if err != nil {
-			return Sha{}, err
+			return Sha{}, fmt.Errorf("reading packed refs: %w", err)
 		}
 		if v, ok := branchMap[currentBranch]; ok {
 			return v, nil
 		}
 		return Sha{}, nil
 	} else if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("reading branch head %s: %w", currentBranch, err)
 	} else if bytes == nil {
 		return Sha{}, fmt.Errorf("fatal: not a valid object name: '%s'", currentBranch)
 	}
 	sha, err := NewSha(bytes[0:40])
-	return sha, err
+	if err != nil {
+		return Sha{}, fmt.Errorf("parsing branch head sha: %w", err)
+	}
+	return sha, nil
 }
 
-// CurrentBranch returns the name of the current branch
-func CurrentBranch() (string, error) {
-	f, err := os.Open(GitHeadPath())
+// Branch returns the name of the current branch.
+func (r *Repository) Branch() (string, error) {
+	f, err := os.Open(r.gitHeadPath())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("opening HEAD: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	r := bufio.NewReader(f)
-	b, err := r.ReadBytes('\n')
+	rd := bufio.NewReader(f)
+	b, err := rd.ReadBytes('\n')
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("reading HEAD: %w", err)
 	}
 	if len(b) < 12 {
 		return "", errors.New("invalid HEAD file, expected > 12 bytes")
@@ -65,24 +70,24 @@ func CurrentBranch() (string, error) {
 	return string(b[16 : len(b)-1]), nil
 }
 
-// CurrentCommit return the current commit SHA
+// currentCommit returns the current commit SHA.
 // @todo this probably breaks in detached head...
-func CurrentCommit() (Sha, error) {
-	currentBranch, err := CurrentBranch()
+func (r *Repository) currentCommit() (Sha, error) {
+	currentBranch, err := r.Branch()
 	if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("reading current branch: %w", err)
 	}
-	sha, err := HeadSHA(currentBranch)
+	sha, err := r.Head(currentBranch)
 	if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("reading head sha: %w", err)
 	}
 	return sha, nil
 }
 
-func PreviousCommits() ([]Sha, error) {
-	previousCommit, err := CurrentCommit()
+func (r *Repository) previousCommits() ([]Sha, error) {
+	previousCommit, err := r.currentCommit()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading current commit: %w", err)
 	}
 	if previousCommit.IsSet() {
 		return []Sha{previousCommit}, nil
@@ -90,24 +95,24 @@ func PreviousCommits() ([]Sha, error) {
 	return nil, nil
 }
 
-// ListBranches lists Git branches from refs/heads and info/refs
-// It does not currently allow listing remote tracking branches
-func ListBranches() ([]string, error) {
+// Branches lists Git branches from refs/heads and info/refs.
+// It does not currently allow listing remote tracking branches.
+func (r *Repository) Branches() ([]string, error) {
 	var branches []string
 	branchMap := make(map[string]struct{})
 
 	// check for packed refs
-	packed, err := packedrefs()
+	packed, err := r.packedrefs()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading packed refs: %w", err)
 	}
 	for k := range packed {
 		branchMap[k] = struct{}{}
 	}
 
-	f, err := os.ReadDir(RefsHeadsDirectory())
+	f, err := os.ReadDir(r.refsHeadsDirectory())
 	if err != nil {
-		return branches, err
+		return branches, fmt.Errorf("reading refs/heads: %w", err)
 	}
 	for _, v := range f {
 		if v.IsDir() {
@@ -123,27 +128,29 @@ func ListBranches() ([]string, error) {
 	return branches, nil
 }
 
-func CreateBranch(name string) error {
-	currentBranch, err := CurrentBranch()
+// CreateBranch creates a new branch pointing at the current HEAD.
+func (r *Repository) CreateBranch(name string) error {
+	currentBranch, err := r.Branch()
 	if err != nil {
-		return err
+		return fmt.Errorf("reading current branch: %w", err)
 	}
-	head, err := HeadSHA(currentBranch)
+	head, err := r.Head(currentBranch)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading head sha: %w", err)
 	}
 
-	return UpdateBranchHead(name, head)
+	return r.updateBranchHead(name, head)
 }
 
-func DeleteBranch(name string) error {
-	return os.Remove(filepath.Join(RefsHeadsDirectory(), name))
+// DeleteBranch removes a branch ref file.
+func (r *Repository) DeleteBranch(name string) error {
+	return os.Remove(filepath.Join(r.refsHeadsDirectory(), name))
 }
 
-func packedrefs() (map[string]Sha, error) {
+func (r *Repository) packedrefs() (map[string]Sha, error) {
 	branchMap := make(map[string]Sha)
 
-	fh, err := os.Open(PackedRefsFile())
+	fh, err := os.Open(r.packedRefsFile())
 	defer func() {
 		if fh != nil {
 			_ = fh.Close()
@@ -161,13 +168,25 @@ func packedrefs() (map[string]Sha, error) {
 			// refs (for stash)
 			// refs/remotes/.../
 			// for now just use refs/heads/
-			if path, ok := strings.CutPrefix(path, RefsHeadPrefix()); ok {
+			if path, ok := strings.CutPrefix(path, r.refsHeadPrefix()); ok {
 				branchMap[path], err = NewSha(hash)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("parsing packed ref sha: %w", err)
 				}
 			}
 		}
 	}
 	return branchMap, nil
 }
+
+// --- Free-function shims — delegate to defaultRepo during migration. ---
+
+func UpdateHead(branch string) error                   { return defaultRepo.updateHead(branch) }
+func UpdateBranchHead(branch string, sha Sha) error    { return defaultRepo.updateBranchHead(branch, sha) }
+func HeadSHA(currentBranch string) (Sha, error)        { return defaultRepo.Head(currentBranch) }
+func CurrentBranch() (string, error)                   { return defaultRepo.Branch() }
+func CurrentCommit() (Sha, error)                      { return defaultRepo.currentCommit() }
+func PreviousCommits() ([]Sha, error)                  { return defaultRepo.previousCommits() }
+func ListBranches() ([]string, error)                  { return defaultRepo.Branches() }
+func CreateBranch(name string) error                   { return defaultRepo.CreateBranch(name) }
+func DeleteBranch(name string) error                   { return defaultRepo.DeleteBranch(name) }

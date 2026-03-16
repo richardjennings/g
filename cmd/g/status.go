@@ -21,7 +21,7 @@ var statusCmd = &cobra.Command{
 // Status currently displays the file statuses comparing the working directory
 // to the index and the index to the last commit (if any).
 func Status(o io.Writer) error {
-	files, err := g.CurrentStatus()
+	files, err := repo.Status()
 	if err != nil {
 		return err
 	}

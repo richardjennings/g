@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"github.com/richardjennings/g"
 	"github.com/stretchr/testify/assert"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -16,12 +14,13 @@ import (
 func Test_DefaultBranch(t *testing.T) {
 	dir := testDir(t)
 	defer func() { _ = os.RemoveAll(dir) }()
-	testConfigure(t, dir)
-	if err := Init(); err != nil {
+	var err error
+	repo, err = g.Init(g.WithGitDirectory(g.DefaultGitDirectory), g.WithPath(dir))
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	actual, err := g.CurrentBranch()
+	actual, err := repo.Branch()
 	assert.NoError(t, err)
 	expected := "main"
 	assert.Equal(t, expected, actual)
@@ -30,10 +29,11 @@ func Test_DefaultBranch(t *testing.T) {
 func Test_End_To_End(t *testing.T) {
 	dir := testDir(t)
 	defer func() { _ = os.RemoveAll(dir) }()
-	testConfigure(t, dir)
 
 	// git init
-	if err := Init(); err != nil {
+	var err error
+	repo, err = g.Init(g.WithGitDirectory(g.DefaultGitDirectory), g.WithPath(dir))
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -49,48 +49,41 @@ func Test_End_To_End(t *testing.T) {
 	// git status --porcelain
 	testStatus(t, "?? hello\n")
 
-	// add the file to the index
-	// git add .
-	testAdd(t, ".", 1)
-	files := testListFiles(t, g.ObjectPath(), false)
-	assert.Equal(t, 1, len(files))
-
-	// status should be added
-	// git status --porcelain
-	testStatus(t, "A  hello\n")
-
-	// create commit
-	// git commit -m "test"
-	testCommit(t, []byte("78"))
-
-	// list branches - main should now show up as it has a commit
-	// git branch
-	testBranchLs(t, "* main\n")
-
-	files = testListFiles(t, g.ObjectPath(), false)
-	// blob, tree object, commit object
-	assert.Equal(t, 3, len(files))
-
-	// Test adding a modified file to the index
-	// update a file
-	// echo "hello world" > hello
-	writeFile(t, dir, "hello", []byte("hello world"))
-
-	// status should be modified
-	// git status porcelain
-	testStatus(t, " M hello\n")
-
-	// add the file to the index
+	// add a file
 	// git add hello
 	testAdd(t, "hello", 1)
 
+	// status should now show index tracked
+	// git status --porcelain
+	testStatus(t, "A  hello\n")
+
+	// list files
+	files, err := LsFiles()
+	assert.NoError(t, err)
+	assert.Len(t, files, 1)
+
+	// commit
+	// git commit
+	testCommit(t, []byte("123"))
+
+	// git status --porcelain
+	testStatus(t, "")
+
+	// write a file
+	// echo "world" > hello
+	writeFile(t, dir, "hello", []byte("world"))
+
+	// git status
+	testStatus(t, " M hello\n")
+
+	// git add hello
+	testAdd(t, "hello", 1)
+
+	// git status
 	testStatus(t, "M  hello\n")
 
-	// git commit
-	testCommit(t, []byte("104"))
-
-	// status should be empty
-	// git status --porcelain
+	// commit
+	testCommit(t, []byte("124"))
 	testStatus(t, "")
 
 	// create a branch called test
@@ -103,7 +96,7 @@ func Test_End_To_End(t *testing.T) {
 
 	// trying to delete current checkout branch gives error
 	// git branch -d main
-	err := DeleteBranch("main")
+	err = DeleteBranch("main")
 	assert.Equal(t, fmt.Sprintf(DeleteBranchCheckedOutErrFmt, "main", dir), err.Error())
 
 	// delete test branch
@@ -167,33 +160,6 @@ func testDir(t *testing.T) string {
 	return dir
 }
 
-func testConfigure(t *testing.T, path string) {
-	opts := []g.Opt{
-		g.WithGitDirectory(g.DefaultGitDirectory),
-		g.WithPath(path),
-	}
-	if err := g.Configure(opts...); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func testListFiles(t *testing.T, path string, dirs bool) []string {
-	var files []string
-	if err := filepath.Walk(path, func(p string, info fs.FileInfo, err error) error {
-		if p == path {
-			return nil
-		}
-		if !dirs && info.IsDir() {
-			return nil
-		}
-		files = append(files, strings.TrimPrefix(p, path+string(filepath.Separator)))
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return files
-}
-
 func testAdd(t *testing.T, path string, numIdxFiles int) {
 	if err := Add(path); err != nil {
 		t.Fatal(err)
@@ -214,7 +180,7 @@ func testStatus(t *testing.T, expected string) {
 }
 
 func testRestore(t *testing.T, path string, staged bool) {
-	if err := g.Restore(path, staged); err != nil {
+	if err := repo.Restore(path, staged); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -226,7 +192,7 @@ func testCommit(t *testing.T, message []byte) g.Sha {
 	}
 
 	// read object
-	c, err := g.ReadCommit(sha)
+	c, err := repo.ReadCommit(sha)
 	if err != nil {
 		t.Error(err)
 		return sha

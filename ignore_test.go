@@ -28,7 +28,7 @@ func TestIsIgnored(t *testing.T) {
 		// An optional prefix "!" which negates the pattern; any matching file
 		// excluded by a previous pattern will become included again. It is not
 		// possible to re-include a file if a parent directory of that file is
-		// excluded. Git doesn’t list excluded directories for performance
+		// excluded. Git doesn't list excluded directories for performance
 		// reasons, so any patterns on contained files have no effect, no matter
 		// where they are defined. Put a backslash ("\") in front of the first
 		// "!" for patterns that begin with a literal "!", for example,
@@ -96,7 +96,7 @@ func TestIsIgnored(t *testing.T) {
 		// @todo
 	} {
 		t.Run(fmt.Sprintf("%s with %s", tt.Pattern, tt.Path), func(t *testing.T) {
-			actual := IsIgnored(tt.Path, [][]byte{[]byte(tt.Pattern)})
+			actual := IsIgnored(tt.Path, [][]byte{[]byte(tt.Pattern)}, "", ".git")
 			if actual != tt.Expect {
 				t.Errorf("got %v, want %v", actual, tt.Expect)
 			}

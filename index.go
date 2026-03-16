@@ -14,9 +14,11 @@ import (
 	"syscall"
 )
 
+
 type (
 	// Index represents the Git Index
 	Index struct {
+		repo   *Repository
 		header *indexHeader
 		items  []*indexItem
 		sig    [20]byte
@@ -47,30 +49,36 @@ type (
 )
 
 // Files lists the files in the index
-func (idx *Index) Files() []*FileStatus {
+func (idx *Index) Files() ([]*FileStatus, error) {
 	var files []*FileStatus
 	for _, v := range idx.items {
-		s, _ := NewSha(v.Sha[:])
+		s, err := NewSha(v.Sha[:])
+		if err != nil {
+			return nil, fmt.Errorf("parsing index entry sha for %s: %w", v.Name, err)
+		}
 		idx := &FileStatus{
 			path:  string(v.Name),
 			index: &fileInfo{Sha: s, Finfo: fromIndexItemP(v.indexItemP)},
 		}
 		files = append(files, idx)
 	}
-	return files
+	return files, nil
 }
 
-func (idx *Index) File(path string) *FileStatus {
+func (idx *Index) File(path string) (*FileStatus, error) {
 	for _, v := range idx.items {
 		if string(v.Name) == path {
-			s, _ := NewSha(v.Sha[:])
+			s, err := NewSha(v.Sha[:])
+			if err != nil {
+				return nil, fmt.Errorf("parsing index entry sha for %s: %w", v.Name, err)
+			}
 			return &FileStatus{
 				path:  string(v.Name),
 				index: &fileInfo{Sha: s, Finfo: fromIndexItemP(v.indexItemP)},
-			}
+			}, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // Rm removes a item from the Index
@@ -138,7 +146,7 @@ func (idx *Index) addFromIndex(f *FileStatus) error {
 }
 
 func (idx *Index) addFromCommit(f *FileStatus) error {
-	finfo, err := os.Stat(filepath.Join(Path(), f.Path()))
+	finfo, err := os.Stat(filepath.Join(idx.repo.Path(), f.Path()))
 	if err != nil {
 		return err
 	}
@@ -153,7 +161,7 @@ func (idx *Index) addFromCommit(f *FileStatus) error {
 }
 
 func (idx *Index) addFromWorkTree(f *FileStatus) error {
-	o, err := WriteBlob(f.Path())
+	o, err := idx.repo.writeBlob(f.Path())
 	if err != nil {
 		return err
 	}
@@ -209,15 +217,14 @@ func (idx *Index) Write() error {
 		return errors.New("index numEntries and length of items inconsistent")
 	}
 
-	// and sort @todo more efficient
 	sort.Slice(idx.items, func(i, j int) bool {
-		return string(idx.items[i].Name) < string(idx.items[j].Name)
+		return bytes.Compare(idx.items[i].Name, idx.items[j].Name) < 0
 	})
 
-	path := IndexFilePath()
+	path := idx.repo.indexFilePath()
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("opening index for writing: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	// use a multi-writer to allow both writing the file whilst incrementally generating
@@ -227,21 +234,22 @@ func (idx *Index) Write() error {
 
 	// write header
 	if err := binary.Write(mw, binary.BigEndian, idx.header); err != nil {
-		return err
+		return fmt.Errorf("writing index header: %w", err)
 	}
 	// write each item fixed size entry
+	var padBuf [8]byte
 	for _, item := range idx.items {
 		if err := binary.Write(mw, binary.BigEndian, item.indexItemP); err != nil {
-			return err
+			return fmt.Errorf("writing index entry: %w", err)
 		}
 		// write name
 		if _, err := mw.Write(item.Name); err != nil {
-			return err
+			return fmt.Errorf("writing index entry name: %w", err)
 		}
 		// write padding
-		padding := make([]byte, 8-(62+len(item.Name))%8)
-		if _, err := mw.Write(padding); err != nil {
-			return err
+		padLen := 8 - (62+len(item.Name))%8
+		if _, err := mw.Write(padBuf[:padLen]); err != nil {
+			return fmt.Errorf("writing index entry padding: %w", err)
 		}
 	}
 	// use the generated hash
@@ -249,19 +257,26 @@ func (idx *Index) Write() error {
 	copy(idx.sig[:], sha)
 	// write Sha hash of Index
 	if err := binary.Write(f, binary.BigEndian, &sha); err != nil {
-		return err
+		return fmt.Errorf("writing index signature: %w", err)
 	}
 
 	return f.Close()
 }
 
-func NewIndex() *Index {
-	return &Index{header: &indexHeader{
-		Sig:        [4]byte{'D', 'I', 'R', 'C'},
-		Version:    2,
-		NumEntries: 0,
-	}}
+// newIndex creates a new empty Index bound to this repository.
+func (r *Repository) newIndex() *Index {
+	return &Index{
+		repo: r,
+		header: &indexHeader{
+			Sig:        [4]byte{'D', 'I', 'R', 'C'},
+			Version:    2,
+			NumEntries: 0,
+		},
+	}
 }
+
+// NewIndex is a free-function shim that delegates to defaultRepo.
+func NewIndex() *Index { return defaultRepo.newIndex() }
 
 func fromIndexItemP(p *indexItemP) *Finfo {
 	f := &Finfo{
@@ -280,42 +295,28 @@ func fromIndexItemP(p *indexItemP) *Finfo {
 	return f
 }
 
-// FsStatus returns a FfileSet containing all files from the index and working directory
-// with the corresponding status.
-func FsStatus(path string) (*FfileSet, error) {
-	idx, err := ReadIndex()
-	if err != nil {
-		return nil, err
-	}
-	idxFiles := idx.Files()
-	files, err := Ls(path)
-	if err != nil {
-		return nil, err
-	}
-	return NewFfileSet(nil, idxFiles, files)
-}
-
-// ReadIndex reads the Git Index into an Index struct
-func ReadIndex() (*Index, error) {
-	path := IndexFilePath()
+// Index reads the Git Index into an Index struct
+func (r *Repository) Index() (*Index, error) {
+	path := r.indexFilePath()
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return NewIndex(), nil
+			return r.newIndex(), nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("opening index: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	// populate indexHeader
-	index := &Index{header: &indexHeader{}}
+	index := &Index{repo: r, header: &indexHeader{}}
 	if err := binary.Read(f, binary.BigEndian, index.header); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading index header: %w", err)
 	}
 	// read num items from header
+	var padBuf [8]byte
 	for i := 0; i < int(index.header.NumEntries); i++ {
 		itemP := &indexItemP{}
 		if err := binary.Read(f, binary.BigEndian, itemP); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reading index entry %d: %w", i, err)
 		}
 		// mask 4 bits out of 12bits of item flags to get filename length
 		l := itemP.Flags & 0xFFF // 12 1s
@@ -323,18 +324,21 @@ func ReadIndex() (*Index, error) {
 		// read l bytes into Name
 		item.Name = make([]byte, l)
 		if err := binary.Read(f, binary.BigEndian, &item.Name); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reading index entry %d name: %w", i, err)
 		}
 		index.items = append(index.items, &item)
 		// now read some bytes to make the total read for the item a multiple of 8
-		padding := make([]byte, 8-(62+l)%8)
-		if err := binary.Read(f, binary.BigEndian, &padding); err != nil {
-			return nil, err
+		padLen := 8 - (62+l)%8
+		if _, err := io.ReadFull(f, padBuf[:padLen]); err != nil {
+			return nil, fmt.Errorf("reading index entry %d padding: %w", i, err)
 		}
 	}
 	if err := binary.Read(f, binary.BigEndian, &index.sig); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading index signature: %w", err)
 	}
 
 	return index, nil
 }
+
+// ReadIndex is a free-function shim that delegates to defaultRepo.
+func ReadIndex() (*Index, error) { return defaultRepo.Index() }

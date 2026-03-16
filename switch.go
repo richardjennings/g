@@ -1,6 +1,7 @@
 package g
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -16,21 +17,21 @@ type switchBranchDelta struct {
 	errorFiles []*FileStatus // The following untracked working tree files would be overwritten by checkout ...
 }
 
-func newSwitchBranchDelta(name string) (*switchBranchDelta, error) {
+func (r *Repository) newSwitchBranchDelta(name string) (*switchBranchDelta, error) {
 	// the delta
 	delta := &switchBranchDelta{}
 
 	// get all files in working directory, index and current commit with the
 	// index and wd statuses set.
-	curFiles, err := CurrentStatus()
+	curFiles, err := r.Status()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading current status: %w", err)
 	}
 
 	// get all the files in the branch HEAD commit being switched to
-	commitFiles, err := CommittedFilesForBranchHead(name)
+	commitFiles, err := r.committedFilesForBranchHead(name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading target branch %s: %w", name, err)
 	}
 
 	// @todo commitFiles returns gibberish idxStatus - which maybe does not
@@ -107,10 +108,11 @@ func newSwitchBranchDelta(name string) (*switchBranchDelta, error) {
 	return delta, nil
 }
 
-func SwitchBranch(name string) ([]string, error) {
-	delta, err := newSwitchBranchDelta(name)
+// Switch switches the working directory and index to the named branch.
+func (r *Repository) Switch(name string) ([]string, error) {
+	delta, err := r.newSwitchBranchDelta(name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("computing branch delta: %w", err)
 	}
 	if len(delta.errorFiles) != 0 {
 		// do not return an error as detecting errorFiles may not be
@@ -124,44 +126,47 @@ func SwitchBranch(name string) ([]string, error) {
 
 	// remove the files that need to be removed
 	for _, v := range delta.remove {
-		if err := os.Remove(filepath.Join(Path(), v.Path())); err != nil {
-			return nil, err
+		if err := os.Remove(filepath.Join(r.Path(), v.Path())); err != nil {
+			return nil, fmt.Errorf("removing %s: %w", v.Path(), err)
 		}
 	}
 
 	// add the files that need to be added
 	for _, v := range delta.add {
-		if err := writeObjectToWorkingTree(v.commit.Sha, v.Path()); err != nil {
-			return nil, err
+		if err := r.writeObjectToWorkingTree(v.commit.Sha, v.Path()); err != nil {
+			return nil, fmt.Errorf("writing %s: %w", v.Path(), err)
 		}
 	}
 
 	// rebuild the index
-	idx := NewIndex()
+	idx := r.newIndex()
 	for _, v := range delta.addSkip {
 		if err := idx.addFromCommit(v); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("indexing %s: %w", v.Path(), err)
 		}
 	}
 	for _, v := range delta.add {
 		if err := idx.addFromCommit(v); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("indexing %s: %w", v.Path(), err)
 		}
 	}
 	for _, v := range delta.staged {
 		if err := idx.addFromIndex(v); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("indexing %s: %w", v.Path(), err)
 		}
 	}
 
 	if err := idx.Write(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("writing index: %w", err)
 	}
 
 	// update HEAD
-	if err := UpdateHead(name); err != nil {
-		return nil, err
+	if err := r.updateHead(name); err != nil {
+		return nil, fmt.Errorf("updating HEAD: %w", err)
 	}
 
 	return nil, nil
 }
+
+// SwitchBranch is a free-function shim that delegates to defaultRepo.
+func SwitchBranch(name string) ([]string, error) { return defaultRepo.Switch(name) }

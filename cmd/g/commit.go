@@ -44,11 +44,11 @@ func Commit(message []byte) (g.Sha, error) {
 		commit.Message = message
 	} else {
 		// empty commit file
-		if err := os.WriteFile(g.EditorFile(), []byte{}, 0600); err != nil {
+		if err := os.WriteFile(repo.EditorFile(), []byte{}, 0600); err != nil {
 			log.Fatalln(err)
 		}
-		ed, args := g.Editor()
-		args = append(args, g.EditorFile())
+		ed, args := repo.Editor()
+		args = append(args, repo.EditorFile())
 		cmd := exec.Command(ed, args...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -66,7 +66,7 @@ func Commit(message []byte) (g.Sha, error) {
 	if len(commit.Message) == 0 {
 		return g.Sha{}, errors.New("aborting commit due to empty commit message")
 	}
-	return g.CreateCommit(commit)
+	return repo.Commit(commit)
 }
 
 func init() {
