@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -292,4 +293,244 @@ func assertStatus(t *testing.T, i map[string]IndexStatus, w map[string]WDStatus)
 			t.Errorf("expected file '%s' to have working directory status '%s' got '%s'", k, v, f.wdStatus)
 		}
 	}
+}
+
+// initTestRepo creates a temp directory, configures g, and calls Init.
+// It returns the temp dir path and a cleanup function.
+func initTestRepo(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "g-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	t.Setenv("GIT_AUTHOR_NAME", "tester")
+	t.Setenv("GIT_AUTHOR_EMAIL", "tester@test.com")
+
+	e(Configure(WithPath(dir), WithGitDirectory(".git")), t)
+	e(Init(), t)
+	return dir
+}
+
+func makeCommit(t *testing.T, msg string) Sha {
+	t.Helper()
+	return assertCreateCommit(t, &Commit{
+		Author:        fmt.Sprintf("%s <%s>", "tester", "tester@test.com"),
+		AuthoredTime:  time.Now(),
+		Committer:     fmt.Sprintf("%s <%s>", "tester", "tester@test.com"),
+		CommittedTime: time.Now(),
+		Message:       []byte(msg),
+	})
+}
+
+// Test_Restore_NonExistentFile tests that restoring a file that does not exist
+// returns an error.
+func Test_Restore_NonExistentFile(t *testing.T) {
+	_ = initTestRepo(t)
+
+	// create and commit a file so the repo has at least one commit
+	err := Restore("nonexistent.txt", false)
+	if err == nil {
+		t.Fatal("expected error when restoring a non-existent file, got nil")
+	}
+}
+
+// Test_Restore_UntrackedFile tests that restoring an untracked file returns a
+// pathspec error.
+func Test_Restore_UntrackedFile(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// create a file but do NOT add it to the index
+	e(os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("hello"), 0644), t)
+
+	err := Restore("untracked.txt", false)
+	if err == nil {
+		t.Fatal("expected error when restoring an untracked file, got nil")
+	}
+	if !strings.Contains(err.Error(), "pathspec") {
+		t.Errorf("expected pathspec error message, got: %s", err.Error())
+	}
+}
+
+// Test_RestoreStaged_CommittedFile tests the RestoreStaged upsert path where
+// the file IS in a previous commit. This differs from the Rm path (tested
+// in the main integration test) where the file is only added, not committed.
+func Test_RestoreStaged_CommittedFile(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// create and commit a file
+	e(os.WriteFile(filepath.Join(dir, "x"), []byte("original"), 0644), t)
+	assertAddFiles(t, []string{"x"})
+	makeCommit(t, "initial commit with x")
+
+	// verify committed status
+	assertStatus(t,
+		map[string]IndexStatus{"x": NotUpdated},
+		map[string]WDStatus{"x": IndexAndWorkingTreeMatch},
+	)
+
+	// modify the file, add it to the index (UpdatedInIndex)
+	e(os.WriteFile(filepath.Join(dir, "x"), []byte("modified"), 0644), t)
+	assertAddFiles(t, []string{"x"})
+	assertStatus(t,
+		map[string]IndexStatus{"x": UpdatedInIndex},
+		map[string]WDStatus{"x": IndexAndWorkingTreeMatch},
+	)
+
+	// restore --staged x (upsert path: file exists in commit)
+	assertRestore(t, "x", true)
+
+	// after restore --staged, the index should reflect the committed version
+	// while the working tree still has the modification
+	assertStatus(t,
+		map[string]IndexStatus{"x": NotUpdated},
+		map[string]WDStatus{"x": WorktreeChangedSinceIndex},
+	)
+}
+
+// Test_SwitchBranch_WithConflicts tests that switching branches when there are
+// local modifications to a file that differs between branches returns the
+// conflicting file list.
+func Test_SwitchBranch_WithConflicts(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// create and commit a file on main
+	e(os.WriteFile(filepath.Join(dir, "conflict.txt"), []byte("main-version"), 0644), t)
+	assertAddFiles(t, []string{"conflict.txt"})
+	makeCommit(t, "commit on main")
+
+	// create a new branch and switch to it
+	e(CreateBranch("feature"), t)
+	assertSwitchBranch(t, "feature", assertNoErrorFiles)
+
+	// modify and commit the file on the feature branch
+	e(os.WriteFile(filepath.Join(dir, "conflict.txt"), []byte("feature-version"), 0644), t)
+	assertAddFiles(t, []string{"conflict.txt"})
+	makeCommit(t, "commit on feature")
+
+	// switch back to main
+	assertSwitchBranch(t, "main", assertNoErrorFiles)
+
+	// modify the file locally (without committing) so it conflicts with feature
+	e(os.WriteFile(filepath.Join(dir, "conflict.txt"), []byte("local-change"), 0644), t)
+
+	// try switching to feature -- should report conflicting files
+	errFiles, err := SwitchBranch("feature")
+	if err != nil {
+		t.Fatalf("expected no error from SwitchBranch, got: %v", err)
+	}
+	if len(errFiles) == 0 {
+		t.Fatal("expected non-empty error file list when switching with conflicts")
+	}
+
+	found := false
+	for _, f := range errFiles {
+		if f == "conflict.txt" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'conflict.txt' in conflict list, got: %v", errFiles)
+	}
+}
+
+// Test_NestedDirectories_WriteTree tests that files in nested subdirectories
+// are correctly handled by ObjectTree and WriteTree, and that the commit
+// round-trips properly.
+func Test_NestedDirectories_WriteTree(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// create nested directory structure
+	e(os.MkdirAll(filepath.Join(dir, "a", "b", "c"), 0755), t)
+	e(os.WriteFile(filepath.Join(dir, "top.txt"), []byte("top"), 0644), t)
+	e(os.WriteFile(filepath.Join(dir, "a", "mid.txt"), []byte("mid"), 0644), t)
+	e(os.WriteFile(filepath.Join(dir, "a", "b", "deep.txt"), []byte("deep"), 0644), t)
+	e(os.WriteFile(filepath.Join(dir, "a", "b", "c", "deepest.txt"), []byte("deepest"), 0644), t)
+
+	// add all files
+	assertAddFiles(t, []string{"top.txt"})
+	assertAddFiles(t, []string{filepath.Join("a", "mid.txt")})
+	assertAddFiles(t, []string{filepath.Join("a", "b", "deep.txt")})
+	assertAddFiles(t, []string{filepath.Join("a", "b", "c", "deepest.txt")})
+
+	// commit
+	commitSha := makeCommit(t, "nested directories commit")
+
+	// verify the commit is readable
+	assertLookupCommit(t, commitSha, func(t *testing.T, commit *Commit) {
+		if !strings.Contains(string(commit.Message), "nested directories commit") {
+			t.Errorf("unexpected commit message: %s", commit.Message)
+		}
+	})
+
+	// read back the committed files via the object tree
+	committedFiles, err := CommittedFiles(commitSha)
+	if err != nil {
+		t.Fatalf("failed to read committed files: %v", err)
+	}
+
+	expectedPaths := map[string]bool{
+		"top.txt":                                    false,
+		filepath.Join("a", "mid.txt"):                false,
+		filepath.Join("a", "b", "deep.txt"):          false,
+		filepath.Join("a", "b", "c", "deepest.txt"):  false,
+	}
+
+	for _, f := range committedFiles {
+		if _, ok := expectedPaths[f.Path()]; ok {
+			expectedPaths[f.Path()] = true
+		}
+	}
+
+	for p, found := range expectedPaths {
+		if !found {
+			t.Errorf("expected path '%s' in committed files but not found", p)
+		}
+	}
+}
+
+// Test_Init_Idempotent tests that calling Init twice does not produce an error.
+func Test_Init_Idempotent(t *testing.T) {
+	dir, err := os.MkdirTemp("", "g-test-init-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	t.Setenv("GIT_AUTHOR_NAME", "tester")
+	t.Setenv("GIT_AUTHOR_EMAIL", "tester@test.com")
+
+	e(Configure(WithPath(dir), WithGitDirectory(".git")), t)
+
+	// first init
+	e(Init(), t)
+
+	// verify .git directory exists
+	info, err := os.Stat(filepath.Join(dir, ".git"))
+	if err != nil {
+		t.Fatalf("expected .git directory to exist after first Init: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected .git to be a directory")
+	}
+
+	// second init -- should not error
+	e(Init(), t)
+
+	// verify .git directory still exists and is intact
+	info, err = os.Stat(filepath.Join(dir, ".git"))
+	if err != nil {
+		t.Fatalf("expected .git directory to exist after second Init: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected .git to be a directory after second Init")
+	}
+
+	// verify we can still use the repo after double init
+	e(os.WriteFile(filepath.Join(dir, "test.txt"), []byte("test"), 0644), t)
+	assertAddFiles(t, []string{"test.txt"})
+	makeCommit(t, "commit after double init")
+	assertCurrentBranch(t, "main")
 }
