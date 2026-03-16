@@ -1,7 +1,7 @@
 package g
 
 import (
-	"log"
+	"fmt"
 	"os"
 )
 
@@ -17,7 +17,7 @@ func Init() error {
 		RefsHeadsDirectory(),
 	} {
 		if err := os.MkdirAll(v, 0755); err != nil {
-			log.Fatalln(err)
+			return fmt.Errorf("creating directory %s: %w", v, err)
 		}
 	}
 	// set default main branch
