@@ -17,7 +17,9 @@ type (
 func NewSha(b []byte) (Sha, error) {
 	if len(b) == 40 {
 		s := Sha{set: true}
-		_, _ = hex.Decode(s.hash[:], b)
+		if _, err := hex.Decode(s.hash[:], b); err != nil {
+			return Sha{}, fmt.Errorf("decoding sha hex: %w", err)
+		}
 		return s, nil
 	}
 	if len(b) == 20 {

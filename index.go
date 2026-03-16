@@ -48,30 +48,36 @@ type (
 )
 
 // Files lists the files in the index
-func (idx *Index) Files() []*FileStatus {
+func (idx *Index) Files() ([]*FileStatus, error) {
 	var files []*FileStatus
 	for _, v := range idx.items {
-		s, _ := NewSha(v.Sha[:])
+		s, err := NewSha(v.Sha[:])
+		if err != nil {
+			return nil, fmt.Errorf("parsing index entry sha for %s: %w", v.Name, err)
+		}
 		idx := &FileStatus{
 			path:  string(v.Name),
 			index: &fileInfo{Sha: s, Finfo: fromIndexItemP(v.indexItemP)},
 		}
 		files = append(files, idx)
 	}
-	return files
+	return files, nil
 }
 
-func (idx *Index) File(path string) *FileStatus {
+func (idx *Index) File(path string) (*FileStatus, error) {
 	for _, v := range idx.items {
 		if string(v.Name) == path {
-			s, _ := NewSha(v.Sha[:])
+			s, err := NewSha(v.Sha[:])
+			if err != nil {
+				return nil, fmt.Errorf("parsing index entry sha for %s: %w", v.Name, err)
+			}
 			return &FileStatus{
 				path:  string(v.Name),
 				index: &fileInfo{Sha: s, Finfo: fromIndexItemP(v.indexItemP)},
-			}
+			}, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // Rm removes a item from the Index
@@ -288,7 +294,10 @@ func FsStatus(path string) (*FfileSet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading index: %w", err)
 	}
-	idxFiles := idx.Files()
+	idxFiles, err := idx.Files()
+	if err != nil {
+		return nil, fmt.Errorf("reading index files: %w", err)
+	}
 	files, err := Ls(path)
 	if err != nil {
 		return nil, fmt.Errorf("listing files: %w", err)

@@ -30,7 +30,10 @@ func Status(idx *Index, commitSha Sha) (*FfileSet, error) {
 		}
 	}
 
-	indexFiles = idx.Files()
+	indexFiles, err = idx.Files()
+	if err != nil {
+		return nil, fmt.Errorf("reading index files: %w", err)
+	}
 
 	// set working tree files
 	wtFiles, err = Ls(Path())

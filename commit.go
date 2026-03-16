@@ -8,7 +8,11 @@ func CreateCommit(commit *Commit) (Sha, error) {
 	if err != nil {
 		return Sha{}, fmt.Errorf("reading index: %w", err)
 	}
-	root := ObjectTree(idx.Files())
+	idxFiles, err := idx.Files()
+	if err != nil {
+		return Sha{}, fmt.Errorf("reading index files: %w", err)
+	}
+	root := ObjectTree(idxFiles)
 	tree, err := root.WriteTree()
 	if err != nil {
 		return Sha{}, fmt.Errorf("writing tree: %w", err)

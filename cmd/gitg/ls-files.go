@@ -29,8 +29,12 @@ func LsFiles() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	idxFiles, err := idx.Files()
+	if err != nil {
+		return nil, err
+	}
 	var files []string
-	for _, v := range idx.Files() {
+	for _, v := range idxFiles {
 		files = append(files, v.Path())
 	}
 	return files, nil
