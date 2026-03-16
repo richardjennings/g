@@ -18,11 +18,11 @@ repo, _ := g.Init(g.WithPath("/tmp/myrepo"))
 repo, _ := g.Open(g.WithPath("/tmp/myrepo"))
 
 // status, commit
-status, _ := repo.CurrentStatus()
-repo.CreateCommit(&g.Commit{...})
+status, _ := repo.Status()
+repo.Commit(&g.Commit{...})
 
 // branches
 repo.CreateBranch("feature")
-repo.SwitchBranch("feature")
-branches, _ := repo.ListBranches()
+repo.Switch("feature")
+branches, _ := repo.Branches()
 ```
