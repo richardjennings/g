@@ -216,9 +216,8 @@ func (idx *Index) Write() error {
 		return errors.New("index numEntries and length of items inconsistent")
 	}
 
-	// and sort @todo more efficient
 	sort.Slice(idx.items, func(i, j int) bool {
-		return string(idx.items[i].Name) < string(idx.items[j].Name)
+		return bytes.Compare(idx.items[i].Name, idx.items[j].Name) < 0
 	})
 
 	path := IndexFilePath()
@@ -237,6 +236,7 @@ func (idx *Index) Write() error {
 		return fmt.Errorf("writing index header: %w", err)
 	}
 	// write each item fixed size entry
+	var padBuf [8]byte
 	for _, item := range idx.items {
 		if err := binary.Write(mw, binary.BigEndian, item.indexItemP); err != nil {
 			return fmt.Errorf("writing index entry: %w", err)
@@ -246,8 +246,8 @@ func (idx *Index) Write() error {
 			return fmt.Errorf("writing index entry name: %w", err)
 		}
 		// write padding
-		padding := make([]byte, 8-(62+len(item.Name))%8)
-		if _, err := mw.Write(padding); err != nil {
+		padLen := 8 - (62+len(item.Name))%8
+		if _, err := mw.Write(padBuf[:padLen]); err != nil {
 			return fmt.Errorf("writing index entry padding: %w", err)
 		}
 	}
@@ -322,6 +322,7 @@ func ReadIndex() (*Index, error) {
 		return nil, fmt.Errorf("reading index header: %w", err)
 	}
 	// read num items from header
+	var padBuf [8]byte
 	for i := 0; i < int(index.header.NumEntries); i++ {
 		itemP := &indexItemP{}
 		if err := binary.Read(f, binary.BigEndian, itemP); err != nil {
@@ -337,8 +338,8 @@ func ReadIndex() (*Index, error) {
 		}
 		index.items = append(index.items, &item)
 		// now read some bytes to make the total read for the item a multiple of 8
-		padding := make([]byte, 8-(62+l)%8)
-		if err := binary.Read(f, binary.BigEndian, &padding); err != nil {
+		padLen := 8 - (62+l)%8
+		if _, err := io.ReadFull(f, padBuf[:padLen]); err != nil {
 			return nil, fmt.Errorf("reading index entry %d padding: %w", i, err)
 		}
 	}

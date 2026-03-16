@@ -133,7 +133,8 @@ func (o *Object) FlattenTree() []*FileStatus {
 }
 
 func objectPath(sha Sha) string {
-	return filepath.Join(ObjectPath(), sha.AsHexString()[0:2], sha.AsHexString()[2:])
+	h := sha.AsHexString()
+	return filepath.Join(ObjectPath(), h[0:2], h[2:])
 }
 
 func ReadObject(sha Sha) (*Object, error) {
