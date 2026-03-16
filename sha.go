@@ -31,7 +31,7 @@ func NewSha(b []byte) (Sha, error) {
 func ShaFromHexString(s string) (Sha, error) {
 	v, err := hex.DecodeString(s)
 	if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("decoding hex string: %w", err)
 	}
 	return NewSha(v)
 }

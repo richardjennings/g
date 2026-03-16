@@ -145,7 +145,7 @@ func ReadObject(sha Sha) (*Object, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return lookupInPackfiles(sha)
 		} else {
-			return nil, err
+			return nil, fmt.Errorf("stat object %s: %w", sha, err)
 		}
 	}
 
@@ -153,13 +153,13 @@ func ReadObject(sha Sha) (*Object, error) {
 	o.ReadCloser = ObjectReadCloser(sha.AsHexBytes())
 	z, err := o.ReadCloser()
 	if err != nil {
-		return o, err
+		return o, fmt.Errorf("opening object %s: %w", sha, err)
 	}
 	defer func() { _ = z.Close() }()
 	buf := bufio.NewReader(z)
 	p, err := buf.ReadBytes(0)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
+		return nil, fmt.Errorf("reading object %s header: %w", sha, err)
 	}
 	o.HeaderLength = len(p)
 	header := bytes.Fields(p)
@@ -175,8 +175,11 @@ func ReadObject(sha Sha) (*Object, error) {
 		return nil, fmt.Errorf("unknown %s", string(header[0]))
 	}
 	o.Length, err = strconv.Atoi(string(header[1][:len(header[1])-1]))
+	if err != nil {
+		return nil, fmt.Errorf("parsing object %s length: %w", sha, err)
+	}
 
-	return o, err
+	return o, nil
 }
 
 func ObjectReadCloser(sha []byte) func() (io.ReadCloser, error) {
@@ -184,10 +187,14 @@ func ObjectReadCloser(sha []byte) func() (io.ReadCloser, error) {
 		path := filepath.Join(ObjectPath(), string(sha[0:2]), string(sha[2:]))
 		f, err := os.OpenFile(path, os.O_RDONLY, 0644)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("opening object file %s: %w", path, err)
 		}
 		defer func() { _ = f.Close() }()
-		return zlib.NewReader(f)
+		r, err := zlib.NewReader(f)
+		if err != nil {
+			return nil, fmt.Errorf("decompressing object %s: %w", path, err)
+		}
+		return r, nil
 	}
 }
 
@@ -195,7 +202,7 @@ func ObjectReadCloser(sha []byte) func() (io.ReadCloser, error) {
 func ReadObjectTree(sha Sha) (*Object, error) {
 	obj, err := ReadObject(sha)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading object %s: %w", sha, err)
 	}
 	if obj == nil {
 		return nil, fmt.Errorf("object %s not found", sha.AsHexString())
@@ -204,31 +211,31 @@ func ReadObjectTree(sha Sha) (*Object, error) {
 	case ObjectTypeCommit:
 		commit, err := readCommit(obj)
 		if err != nil {
-			return obj, err
+			return obj, fmt.Errorf("reading commit %s: %w", sha, err)
 		}
 		co, err := ReadObjectTree(commit.Tree)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reading commit tree %s: %w", commit.Tree, err)
 		}
 		obj.Objects = append(obj.Objects, co)
 		return obj, nil
 	case ObjectTypeTree:
 		tree, err := ReadTree(obj)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reading tree %s: %w", sha, err)
 		}
 		for _, v := range tree.Items {
 			sha, err := NewSha(v.Sha)
 			if err != nil {
-				return obj, err
+				return obj, fmt.Errorf("parsing tree item sha: %w", err)
 			}
 			o, err := ReadObjectTree(sha)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("reading tree item %s: %w", v.Path, err)
 			}
 			o.Path = v.Path
 			if o.Typ != v.Typ {
-				return nil, errors.New("types did not match somehow")
+				return nil, fmt.Errorf("type mismatch for %s: expected %d got %d", v.Path, v.Typ, o.Typ)
 			}
 			obj.Objects = append(obj.Objects, o)
 		}
@@ -237,7 +244,7 @@ func ReadObjectTree(sha Sha) (*Object, error) {
 		// lets not read the whole blob
 		return obj, nil
 	default:
-		return nil, errors.New("unhandled object type")
+		return nil, fmt.Errorf("unhandled object type %d", obj.Typ)
 	}
 
 }
@@ -251,7 +258,7 @@ func ReadTree(obj *Object) (*Tree, error) {
 	}
 	r, err := obj.ReadCloser()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening tree %s: %w", obj.Sha, err)
 	}
 	defer func() { _ = r.Close() }()
 	if err := ReadHeadBytes(r, obj); err != nil {
@@ -259,7 +266,7 @@ func ReadTree(obj *Object) (*Tree, error) {
 		if errors.Is(err, io.EOF) {
 			return tree, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("reading tree %s header: %w", obj.Sha, err)
 	}
 	//
 	sha := make([]byte, 20)
@@ -310,7 +317,7 @@ func ReadHeadBytes(r io.ReadCloser, obj *Object) error {
 func ReadCommit(sha Sha) (*Commit, error) {
 	o, err := ReadObject(sha)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading object %s: %w", sha, err)
 	}
 	return readCommit(o)
 }
@@ -323,11 +330,11 @@ func ReadCommit(sha Sha) (*Commit, error) {
 func readCommit(obj *Object) (*Commit, error) {
 	r, err := obj.ReadCloser()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening commit %s: %w", obj.Sha, err)
 	}
 	defer func() { _ = r.Close() }()
 	if err := ReadHeadBytes(r, obj); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading commit %s header: %w", obj.Sha, err)
 	}
 	c := &Commit{Sha: obj.Sha}
 
@@ -347,7 +354,7 @@ func readCommit(obj *Object) (*Commit, error) {
 			}
 			c.Tree, err = NewSha(p[1])
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("parsing commit tree sha: %w", err)
 			}
 			continue
 		}
@@ -355,7 +362,7 @@ func readCommit(obj *Object) (*Commit, error) {
 		if t == "parent" {
 			sha, err := NewSha(p[1])
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("parsing parent sha: %w", err)
 			}
 			c.Parents = append(c.Parents, sha)
 			continue
@@ -367,7 +374,7 @@ func readCommit(obj *Object) (*Commit, error) {
 			}
 			// decode author line
 			if err := readAuthor(p[1], c); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("parsing author: %w", err)
 			}
 			continue
 		}
@@ -378,7 +385,7 @@ func readCommit(obj *Object) (*Commit, error) {
 			}
 			// decode committer line
 			if err := readCommitter(p[1], c); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("parsing committer: %w", err)
 			}
 			continue
 		}
@@ -418,7 +425,7 @@ func readAuthor(b []byte, c *Commit) error {
 	c.AuthorEmail = string(b[s+1 : e])
 	ut, err := strconv.ParseInt(string(b[e+2:e+2+10]), 10, 64)
 	if err != nil {
-		return err
+		return fmt.Errorf("parsing author timestamp: %w", err)
 	}
 	// @todo timezone part
 	c.AuthoredTime = time.Unix(ut, 0)
@@ -432,7 +439,7 @@ func readCommitter(b []byte, c *Commit) error {
 	c.CommitterEmail = string(b[s+1 : e])
 	ut, err := strconv.ParseInt(string(b[e+2:e+2+10]), 10, 64)
 	if err != nil {
-		return err
+		return fmt.Errorf("parsing committer timestamp: %w", err)
 	}
 	// @todo timezone part
 	c.CommittedTime = time.Unix(ut, 0)
@@ -443,11 +450,11 @@ func CommittedFilesForBranchHead(name string) (*FfileSet, error) {
 	// get all files in new commit
 	commitSha, err := HeadSHA(name)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading head sha for %s: %w", name, err)
 	}
 	fs, err := CommittedFiles(commitSha)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading committed files for %s: %w", name, err)
 	}
 	return NewFfileSet(fs, nil, nil)
 }
@@ -455,7 +462,7 @@ func CommittedFilesForBranchHead(name string) (*FfileSet, error) {
 func CommittedFiles(sha Sha) ([]*FileStatus, error) {
 	obj, err := ReadObjectTree(sha)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading object tree %s: %w", sha, err)
 	}
 	return obj.FlattenTree(), nil
 }
@@ -469,7 +476,7 @@ func (o *Object) WriteTree() (Sha, error) {
 			// add the corresponding tree returning the Sha
 			sha, err := v.WriteTree()
 			if err != nil {
-				return Sha{}, err
+				return Sha{}, fmt.Errorf("writing subtree %s: %w", v.Path, err)
 			}
 			o.Objects[i].Sha = sha
 		}
@@ -505,34 +512,34 @@ func WriteObject(header []byte, content []byte, contentFile string, path string)
 	r := io.MultiWriter(h, z)
 
 	if _, err := r.Write(header); err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("writing object header: %w", err)
 	}
 	if len(content) > 0 {
 		if _, err := r.Write(content); err != nil {
-			return Sha{}, err
+			return Sha{}, fmt.Errorf("writing object content: %w", err)
 		}
 	}
 	if contentFile != "" {
 		f, err = os.Open(contentFile)
 		if err != nil {
-			return Sha{}, err
+			return Sha{}, fmt.Errorf("opening content file %s: %w", contentFile, err)
 		}
 		if _, err := io.Copy(r, f); err != nil {
-			return Sha{}, err
+			return Sha{}, fmt.Errorf("copying content file %s: %w", contentFile, err)
 		}
 		if err := f.Close(); err != nil {
-			return Sha{}, err
+			return Sha{}, fmt.Errorf("closing content file %s: %w", contentFile, err)
 		}
 	}
 
 	sha, err := NewSha(h.Sum(nil))
 	if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("creating sha from hash: %w", err)
 	}
 	path = filepath.Join(path, sha.AsHexString()[:2])
 	// create object sha[:2] directory if needed
 	if err := os.MkdirAll(path, 0744); err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("creating object directory %s: %w", path, err)
 	}
 	path = filepath.Join(path, sha.AsHexString()[2:])
 	// if object exists with Sha already we can avoid writing again
@@ -542,9 +549,12 @@ func WriteObject(header []byte, content []byte, contentFile string, path string)
 		return sha, err
 	}
 	if err := z.Close(); err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("closing zlib writer: %w", err)
 	}
-	return sha, os.WriteFile(path, buf.Bytes(), 0655)
+	if err := os.WriteFile(path, buf.Bytes(), 0655); err != nil {
+		return Sha{}, fmt.Errorf("writing object file %s: %w", path, err)
+	}
+	return sha, nil
 }
 
 // WriteBlob writes a file to the object store as a blob and returns
@@ -553,11 +563,14 @@ func WriteBlob(path string) (*Object, error) {
 	path = filepath.Join(Path(), path)
 	finfo, err := os.Stat(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("stat blob %s: %w", path, err)
 	}
 	header := []byte(fmt.Sprintf("blob %d%s", finfo.Size(), string(byte(0))))
 	sha, err := WriteObject(header, nil, path, ObjectPath())
-	return &Object{Sha: sha, Path: path, Typ: ObjectTypeBlob}, err
+	if err != nil {
+		return nil, fmt.Errorf("writing blob %s: %w", path, err)
+	}
+	return &Object{Sha: sha, Path: path, Typ: ObjectTypeBlob}, nil
 }
 
 func writeCommit(c *Commit) (Sha, error) {
@@ -578,41 +591,44 @@ func writeCommit(c *Commit) (Sha, error) {
 	header := []byte(fmt.Sprintf("commit %d%s", len(content), string(byte(0))))
 	sha, err := WriteObject(header, content, "", ObjectPath())
 	if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("writing commit object: %w", err)
 	}
 	branch, err := CurrentBranch()
 	if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("reading current branch: %w", err)
 	}
-	return sha, UpdateBranchHead(branch, sha)
+	if err := UpdateBranchHead(branch, sha); err != nil {
+		return Sha{}, fmt.Errorf("updating branch head: %w", err)
+	}
+	return sha, nil
 }
 
 func writeObjectToWorkingTree(sha Sha, path string) error {
 	obj, err := ReadObject(sha)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading object %s: %w", sha, err)
 	}
 	r, err := obj.ReadCloser()
 	if err != nil {
-		return err
+		return fmt.Errorf("opening object %s: %w", sha, err)
 	}
 	buf := make([]byte, obj.HeaderLength)
 	if _, err := r.Read(buf); err != nil {
-		return err
+		return fmt.Errorf("reading object %s header: %w", sha, err)
 	}
 	f, err := os.OpenFile(filepath.Join(Path(), path), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0655)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating file %s: %w", path, err)
 	}
 
 	if _, err := io.Copy(f, r); err != nil {
-		return err
+		return fmt.Errorf("writing file %s: %w", path, err)
 	}
 	if err := r.Close(); err != nil {
-		return err
+		return fmt.Errorf("closing object reader: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		return err
+		return fmt.Errorf("closing file %s: %w", path, err)
 	}
 
 	return nil

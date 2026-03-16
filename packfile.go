@@ -30,14 +30,18 @@ var PackFileReadCloser = func(path string, offset int64) func() (io.ReadCloser, 
 	return func() (io.ReadCloser, error) {
 		fh, err := os.Open(path)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("opening packfile %s: %w", path, err)
 		}
 		defer func() { _ = fh.Close() }()
 		_, err = fh.Seek(offset, io.SeekStart)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("seeking in packfile %s: %w", path, err)
 		}
-		return zlib.NewReader(fh)
+		r, err := zlib.NewReader(fh)
+		if err != nil {
+			return nil, fmt.Errorf("decompressing packfile %s: %w", path, err)
+		}
+		return r, nil
 	}
 }
 
@@ -72,13 +76,13 @@ func lookupInPackfiles(sha Sha) (*Object, error) {
 			return nil
 		},
 	); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("walking packfile directory: %w", err)
 	}
 	// check each pack file index for the sha
 	for _, v := range packFiles {
 		offset, found, err := findOffsetInIdx(sha, filepath.Join(ObjectPackfileDirectory(), fmt.Sprintf("pack-%s.idx", v)))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("searching pack index %s: %w", v, err)
 		}
 		if found {
 			return findObjectInPack(offset, filepath.Join(ObjectPackfileDirectory(), fmt.Sprintf("pack-%s.pack", v)), sha)
@@ -90,7 +94,7 @@ func lookupInPackfiles(sha Sha) (*Object, error) {
 func readIdxMagic(fh *os.File) error {
 	magic := make([]byte, 4)
 	if err := binary.Read(fh, binary.BigEndian, magic); err != nil {
-		return err
+		return fmt.Errorf("reading idx magic: %w", err)
 	}
 	// check magic bytes
 	if magic[0] != 255 || magic[1] != 116 || magic[2] != 79 || magic[3] != 99 {
@@ -102,7 +106,7 @@ func readIdxMagic(fh *os.File) error {
 func readPackMagic(fh *os.File) error {
 	magic := make([]byte, 4)
 	if err := binary.Read(fh, binary.BigEndian, magic); err != nil {
-		return err
+		return fmt.Errorf("reading pack magic: %w", err)
 	}
 	// check magic bytes
 	if magic[0] != 80 || magic[1] != 65 || magic[2] != 67 || magic[3] != 75 {
@@ -114,7 +118,7 @@ func readPackMagic(fh *os.File) error {
 func readIdxFormat(fh *os.File) (uint32, error) {
 	var format uint32
 	if err := binary.Read(fh, binary.BigEndian, &format); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("reading idx format: %w", err)
 	}
 	return format, nil
 }
@@ -122,7 +126,7 @@ func readIdxFormat(fh *os.File) (uint32, error) {
 func readPackFormat(fh *os.File) (uint32, error) {
 	var format uint32
 	if err := binary.Read(fh, binary.BigEndian, &format); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("reading pack format: %w", err)
 	}
 	return format, nil
 }
@@ -131,8 +135,10 @@ func readFanout(fh *os.File) ([256]uint32, error) {
 	// fanout is an array off jump offsets for the first byte of a sha
 	// this allows us to search for a sha faster, by starting closer.
 	var fanout [256]uint32
-	err := binary.Read(fh, binary.BigEndian, &fanout)
-	return fanout, err
+	if err := binary.Read(fh, binary.BigEndian, &fanout); err != nil {
+		return fanout, fmt.Errorf("reading fanout table: %w", err)
+	}
+	return fanout, nil
 }
 
 func findObjectName(items uint32, fh *os.File, sha Sha) (uint32, bool, error) {
@@ -141,11 +147,11 @@ func findObjectName(items uint32, fh *os.File, sha Sha) (uint32, bool, error) {
 	// for now a blunt force string trauma
 	for i := uint32(0); i < items; i++ {
 		if err := binary.Read(fh, binary.BigEndian, &hash); err != nil {
-			return i, false, err
+			return i, false, fmt.Errorf("reading object name at index %d: %w", i, err)
 		}
 		h, err := NewSha(hash[:])
 		if err != nil {
-			return i, false, err
+			return i, false, fmt.Errorf("parsing object name at index %d: %w", i, err)
 		}
 		if h.AsHexString() == sha.AsHexString() {
 			return i, true, nil
@@ -160,11 +166,11 @@ func readObjectOffset(size uint32, fh *os.File, i uint32) (uint32, error) {
 	// skip to i offset in 4 byte offset values
 	// @todo if offset most significant bit is set, lookupInPackfiles in long offset table
 	if _, err := fh.Seek(int64(4+4+(256*4)+(20*size)+(4*size)+(4*i)), io.SeekStart); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("seeking to object offset: %w", err)
 	}
 	var offset uint32
 	if err := binary.Read(fh, binary.BigEndian, &offset); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("reading object offset: %w", err)
 	}
 	// we now have the offset to lookupInPackfiles in the pack
 	return offset, nil
@@ -173,25 +179,25 @@ func readObjectOffset(size uint32, fh *os.File, i uint32) (uint32, error) {
 func findOffsetInIdx(sha Sha, path string) (uint32, bool, error) {
 	fh, err := os.Open(path)
 	if err != nil {
-		return 0, false, err
+		return 0, false, fmt.Errorf("opening idx %s: %w", path, err)
 	}
 	defer func() { _ = fh.Close() }()
 	// read the magic bytes to check correct
 	if err := readIdxMagic(fh); err != nil {
-		return 0, false, err
+		return 0, false, fmt.Errorf("idx %s: %w", path, err)
 	}
 	// read the idx format and assert it is 2
 	if format, err := readIdxFormat(fh); err != nil || format != 2 {
 		if err != nil {
-			return 0, false, err
+			return 0, false, fmt.Errorf("idx %s: %w", path, err)
 		} else {
-			return 0, false, errors.New("invalid pack file idx format, expected 2")
+			return 0, false, fmt.Errorf("invalid pack file idx format in %s, expected 2", path)
 		}
 	}
 	// read fanout buckets
 	fanout, err := readFanout(fh)
 	if err != nil {
-		return 0, false, err
+		return 0, false, fmt.Errorf("idx %s: %w", path, err)
 	}
 	// lookupInPackfiles search bounds
 	var startOffset uint32
@@ -206,53 +212,56 @@ func findOffsetInIdx(sha Sha, path string) (uint32, bool, error) {
 	// to make the search more efficient, we can jump to the start
 	// address of this sha 1st byte bucket.
 	if _, err := fh.Seek(int64(startOffset*20), io.SeekCurrent); err != nil {
-		return 0, false, err
+		return 0, false, fmt.Errorf("seeking to fanout bucket: %w", err)
 	}
 
 	i, found, err := findObjectName(endOffset-startOffset, fh, sha)
 	if err != nil {
-		return 0, false, err
+		return 0, false, fmt.Errorf("searching for object %s: %w", sha, err)
 	}
 	if !found {
 		return 0, false, nil
 	}
 
 	offset, err := readObjectOffset(size, fh, i+startOffset)
-	return offset, found, err
+	if err != nil {
+		return 0, false, fmt.Errorf("reading offset for object %s: %w", sha, err)
+	}
+	return offset, found, nil
 }
 
 func findObjectInPack(offset uint32, path string, sha Sha) (*Object, error) {
 	fh, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("opening packfile %s: %w", path, err)
 	}
 	defer func() { _ = fh.Close() }()
 
 	if err := readPackMagic(fh); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("packfile %s: %w", path, err)
 	}
 
 	// read the idx format and assert it is 2
 	if format, err := readPackFormat(fh); err != nil || format != 2 {
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("packfile %s: %w", path, err)
 		} else {
-			return nil, errors.New("invalid pack file format, expected 2")
+			return nil, fmt.Errorf("invalid pack file format in %s, expected 2", path)
 		}
 	}
 
 	var size uint32
 	if err := binary.Read(fh, binary.BigEndian, &size); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading packfile %s size: %w", path, err)
 	}
 
 	if _, err := fh.Seek(int64(offset), io.SeekStart); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("seeking in packfile %s: %w", path, err)
 	}
 
 	typ, length, err := readPackTypeLength(fh)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading pack object type in %s: %w", path, err)
 	}
 
 	obj := &Object{}
@@ -274,7 +283,7 @@ func findObjectInPack(offset uint32, path string, sha Sha) (*Object, error) {
 	// include the seeking as part of the ReadCloser factory config.
 	p, err := fh.Seek(0, io.SeekCurrent)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting position in packfile %s: %w", path, err)
 	}
 	obj.HeaderLength = 0
 	switch typ {
@@ -295,7 +304,7 @@ func readPackTypeLength(fh *os.File) (PackObjectType, uint64, error) {
 	var l uint64
 	for i := 0; i < 9; i++ {
 		if err := binary.Read(fh, binary.BigEndian, &v); err != nil {
-			return 0, 0, err
+			return 0, 0, fmt.Errorf("reading pack type/length byte: %w", err)
 		}
 		if i == 0 {
 			t = PackObjectType(v & 0b01110000 >> 4)

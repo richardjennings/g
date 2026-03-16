@@ -31,32 +31,35 @@ func HeadSHA(currentBranch string) (Sha, error) {
 		// lets check packed-refs
 		branchMap, err := packedrefs()
 		if err != nil {
-			return Sha{}, err
+			return Sha{}, fmt.Errorf("reading packed refs: %w", err)
 		}
 		if v, ok := branchMap[currentBranch]; ok {
 			return v, nil
 		}
 		return Sha{}, nil
 	} else if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("reading branch head %s: %w", currentBranch, err)
 	} else if bytes == nil {
 		return Sha{}, fmt.Errorf("fatal: not a valid object name: '%s'", currentBranch)
 	}
 	sha, err := NewSha(bytes[0:40])
-	return sha, err
+	if err != nil {
+		return Sha{}, fmt.Errorf("parsing branch head sha: %w", err)
+	}
+	return sha, nil
 }
 
 // CurrentBranch returns the name of the current branch
 func CurrentBranch() (string, error) {
 	f, err := os.Open(GitHeadPath())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("opening HEAD: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	r := bufio.NewReader(f)
 	b, err := r.ReadBytes('\n')
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("reading HEAD: %w", err)
 	}
 	if len(b) < 12 {
 		return "", errors.New("invalid HEAD file, expected > 12 bytes")
@@ -70,11 +73,11 @@ func CurrentBranch() (string, error) {
 func CurrentCommit() (Sha, error) {
 	currentBranch, err := CurrentBranch()
 	if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("reading current branch: %w", err)
 	}
 	sha, err := HeadSHA(currentBranch)
 	if err != nil {
-		return Sha{}, err
+		return Sha{}, fmt.Errorf("reading head sha: %w", err)
 	}
 	return sha, nil
 }
@@ -82,7 +85,7 @@ func CurrentCommit() (Sha, error) {
 func PreviousCommits() ([]Sha, error) {
 	previousCommit, err := CurrentCommit()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading current commit: %w", err)
 	}
 	if previousCommit.IsSet() {
 		return []Sha{previousCommit}, nil
@@ -99,7 +102,7 @@ func ListBranches() ([]string, error) {
 	// check for packed refs
 	packed, err := packedrefs()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading packed refs: %w", err)
 	}
 	for k := range packed {
 		branchMap[k] = struct{}{}
@@ -107,7 +110,7 @@ func ListBranches() ([]string, error) {
 
 	f, err := os.ReadDir(RefsHeadsDirectory())
 	if err != nil {
-		return branches, err
+		return branches, fmt.Errorf("reading refs/heads: %w", err)
 	}
 	for _, v := range f {
 		if v.IsDir() {
@@ -126,11 +129,11 @@ func ListBranches() ([]string, error) {
 func CreateBranch(name string) error {
 	currentBranch, err := CurrentBranch()
 	if err != nil {
-		return err
+		return fmt.Errorf("reading current branch: %w", err)
 	}
 	head, err := HeadSHA(currentBranch)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading head sha: %w", err)
 	}
 
 	return UpdateBranchHead(name, head)
@@ -164,7 +167,7 @@ func packedrefs() (map[string]Sha, error) {
 			if path, ok := strings.CutPrefix(path, RefsHeadPrefix()); ok {
 				branchMap[path], err = NewSha(hash)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("parsing packed ref sha: %w", err)
 				}
 			}
 		}

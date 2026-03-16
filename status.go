@@ -1,15 +1,17 @@
 package g
 
+import "fmt"
+
 func CurrentStatus() (*FfileSet, error) {
 	// index
 	idx, err := ReadIndex()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading index: %w", err)
 	}
 
 	commitSha, err := CurrentCommit()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading current commit: %w", err)
 	}
 	return Status(idx, commitSha)
 }
@@ -24,7 +26,7 @@ func Status(idx *Index, commitSha Sha) (*FfileSet, error) {
 	if commitSha.IsSet() {
 		commitFiles, err = CommittedFiles(commitSha)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reading committed files: %w", err)
 		}
 	}
 
@@ -33,7 +35,7 @@ func Status(idx *Index, commitSha Sha) (*FfileSet, error) {
 	// set working tree files
 	wtFiles, err = Ls(Path())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing working tree: %w", err)
 	}
 
 	return NewFfileSet(commitFiles, indexFiles, wtFiles)

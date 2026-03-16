@@ -16,7 +16,7 @@ import (
 func RestoreStaged(path string) error {
 	status, err := CurrentStatus()
 	if err != nil {
-		return err
+		return fmt.Errorf("reading status: %w", err)
 	}
 	f, ok := status.idx[path]
 	if !ok {
@@ -24,27 +24,27 @@ func RestoreStaged(path string) error {
 	}
 	idx, err := ReadIndex()
 	if err != nil {
-		return err
+		return fmt.Errorf("reading index: %w", err)
 	}
 	if f.commit == nil {
 		// if the file is not commited at all, the correct behaviour of staged
 		// is to simply remove the file form the index such that it is no longer
 		// being tracked
 		if err := idx.Rm(path); err != nil {
-			return err
+			return fmt.Errorf("removing from index: %w", err)
 		}
 		return idx.Write()
 	}
 
 	item, err := newItem(f.wd.Finfo, f.commit.Sha, f.path)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating index item: %w", err)
 	}
 	// @todo how does git handle this specfically ?
 	item.MTimeS = item.MTimeS - 100
 	item.CTimeS = item.CTimeS - 100
 	if err := idx.upsertItem(item); err != nil {
-		return err
+		return fmt.Errorf("updating index: %w", err)
 	}
 	return idx.Write()
 }
@@ -56,7 +56,7 @@ func Restore(path string, staged bool) error {
 
 	currentStatus, err := CurrentStatus()
 	if err != nil {
-		return err
+		return fmt.Errorf("reading status: %w", err)
 	}
 
 	fileStatus, ok := currentStatus.Contains(path)
@@ -74,7 +74,7 @@ func Restore(path string, staged bool) error {
 
 	// write the file
 	if err := writeObjectToWorkingTree(fileStatus.index.Sha, fileStatus.Path()); err != nil {
-		return err
+		return fmt.Errorf("restoring %s: %w", path, err)
 	}
 
 	// update modification time to match index

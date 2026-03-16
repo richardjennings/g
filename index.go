@@ -14,6 +14,7 @@ import (
 	"syscall"
 )
 
+
 type (
 	// Index represents the Git Index
 	Index struct {
@@ -217,7 +218,7 @@ func (idx *Index) Write() error {
 	path := IndexFilePath()
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("opening index for writing: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	// use a multi-writer to allow both writing the file whilst incrementally generating
@@ -227,21 +228,21 @@ func (idx *Index) Write() error {
 
 	// write header
 	if err := binary.Write(mw, binary.BigEndian, idx.header); err != nil {
-		return err
+		return fmt.Errorf("writing index header: %w", err)
 	}
 	// write each item fixed size entry
 	for _, item := range idx.items {
 		if err := binary.Write(mw, binary.BigEndian, item.indexItemP); err != nil {
-			return err
+			return fmt.Errorf("writing index entry: %w", err)
 		}
 		// write name
 		if _, err := mw.Write(item.Name); err != nil {
-			return err
+			return fmt.Errorf("writing index entry name: %w", err)
 		}
 		// write padding
 		padding := make([]byte, 8-(62+len(item.Name))%8)
 		if _, err := mw.Write(padding); err != nil {
-			return err
+			return fmt.Errorf("writing index entry padding: %w", err)
 		}
 	}
 	// use the generated hash
@@ -249,7 +250,7 @@ func (idx *Index) Write() error {
 	copy(idx.sig[:], sha)
 	// write Sha hash of Index
 	if err := binary.Write(f, binary.BigEndian, &sha); err != nil {
-		return err
+		return fmt.Errorf("writing index signature: %w", err)
 	}
 
 	return f.Close()
@@ -285,12 +286,12 @@ func fromIndexItemP(p *indexItemP) *Finfo {
 func FsStatus(path string) (*FfileSet, error) {
 	idx, err := ReadIndex()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading index: %w", err)
 	}
 	idxFiles := idx.Files()
 	files, err := Ls(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing files: %w", err)
 	}
 	return NewFfileSet(nil, idxFiles, files)
 }
@@ -303,19 +304,19 @@ func ReadIndex() (*Index, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return NewIndex(), nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("opening index: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	// populate indexHeader
 	index := &Index{header: &indexHeader{}}
 	if err := binary.Read(f, binary.BigEndian, index.header); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading index header: %w", err)
 	}
 	// read num items from header
 	for i := 0; i < int(index.header.NumEntries); i++ {
 		itemP := &indexItemP{}
 		if err := binary.Read(f, binary.BigEndian, itemP); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reading index entry %d: %w", i, err)
 		}
 		// mask 4 bits out of 12bits of item flags to get filename length
 		l := itemP.Flags & 0xFFF // 12 1s
@@ -323,17 +324,17 @@ func ReadIndex() (*Index, error) {
 		// read l bytes into Name
 		item.Name = make([]byte, l)
 		if err := binary.Read(f, binary.BigEndian, &item.Name); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reading index entry %d name: %w", i, err)
 		}
 		index.items = append(index.items, &item)
 		// now read some bytes to make the total read for the item a multiple of 8
 		padding := make([]byte, 8-(62+l)%8)
 		if err := binary.Read(f, binary.BigEndian, &padding); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reading index entry %d padding: %w", i, err)
 		}
 	}
 	if err := binary.Read(f, binary.BigEndian, &index.sig); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading index signature: %w", err)
 	}
 
 	return index, nil
