@@ -650,7 +650,6 @@ func readCommitter(b []byte, c *Commit) error {
 // Free-function shims — delegate to defaultRepo during migration.
 // ---------------------------------------------------------------------------
 
-func objectPath(sha Sha) string                                   { return defaultRepo.objectFilePath(sha) }
 func ObjectReadCloser(sha []byte) func() (io.ReadCloser, error)   { return defaultRepo.objectReadCloser(sha) }
 func ReadObject(sha Sha) (*Object, error)                         { return defaultRepo.readObject(sha) }
 func ReadObjectTree(sha Sha) (*Object, error)                     { return defaultRepo.readObjectTree(sha) }
@@ -661,8 +660,6 @@ func WriteObject(header []byte, content []byte, contentFile string, path string)
 	return defaultRepo.writeObject(header, content, contentFile, path)
 }
 func WriteBlob(path string) (*Object, error)                      { return defaultRepo.writeBlob(path) }
-func writeCommit(c *Commit) (Sha, error)                           { return defaultRepo.writeCommit(c) }
-func writeObjectToWorkingTree(sha Sha, path string) error          { return defaultRepo.writeObjectToWorkingTree(sha, path) }
 
 // WriteTree shim on Object — delegates to defaultRepo.
 func (o *Object) WriteTree() (Sha, error) { return defaultRepo.writeTreeRecursive(o) }

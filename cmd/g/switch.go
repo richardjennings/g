@@ -24,7 +24,7 @@ func SwitchBranch(name string) error {
 		return err
 	}
 	if len(errFiles) > 0 {
-		return fmt.Errorf("error: The following untracked working tree files would be overwritten by checkout:\n\t%s\nPlease move or remove them before you switch branches.", strings.Join(errFiles, "\n\t"))
+		return fmt.Errorf("the following untracked working tree files would be overwritten by checkout:\n\t%s\nplease move or remove them before you switch branches", strings.Join(errFiles, "\n\t"))
 	}
 	return nil
 }

@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"github.com/richardjennings/g"
 	"github.com/stretchr/testify/assert"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -160,23 +158,6 @@ func testDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return dir
-}
-
-func testListFiles(t *testing.T, path string, dirs bool) []string {
-	var files []string
-	if err := filepath.Walk(path, func(p string, info fs.FileInfo, err error) error {
-		if p == path {
-			return nil
-		}
-		if !dirs && info.IsDir() {
-			return nil
-		}
-		files = append(files, strings.TrimPrefix(p, path+string(filepath.Separator)))
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return files
 }
 
 func testAdd(t *testing.T, path string, numIdxFiles int) {
